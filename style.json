@@ -1,0 +1,221 @@
+{
+  "version": 8,
+  "sources": {
+    "backcountry": {
+      "type": "vector",
+      "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/backcountry-ut.pmtiles"
+    },
+    "terrain": {
+      "type": "raster-dem",
+      "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/terrain-ut.pmtiles",
+      "tileSize": 512
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": { "background-color": "#f2efe9" }
+    },
+    {
+      "id": "hillshade",
+      "type": "hillshade",
+      "source": "terrain",
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "hillshade-exaggeration": 0.35,
+        "hillshade-shadow-color": "#5c5748",
+        "hillshade-highlight-color": "#fffdf7"
+      }
+    },
+    {
+      "id": "public-land-usfs",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": ["==", ["get", "agency"], "USFS"],
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "fill-color": "#3f7d54",
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.10, 9, 0.20, 13, 0.30],
+        "fill-outline-color": "#2c5b3c"
+      }
+    },
+    {
+      "id": "public-land-blm",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": ["==", ["get", "agency"], "BLM"],
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "fill-color": "#d4a76a",
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.10, 9, 0.20, 13, 0.30],
+        "fill-outline-color": "#a97f45"
+      }
+    },
+    {
+      "id": "public-land-nps",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": ["==", ["get", "agency"], "NPS"],
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "fill-color": "#8a6fae",
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.12, 9, 0.24, 13, 0.34],
+        "fill-outline-color": "#654f85"
+      }
+    },
+    {
+      "id": "public-land-state",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": ["==", ["get", "agency"], "STATE"],
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "fill-color": "#4a90c2",
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.10, 9, 0.20, 13, 0.30],
+        "fill-outline-color": "#356c97"
+      }
+    },
+    {
+      "id": "public-land-fws",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": ["==", ["get", "agency"], "FWS"],
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "fill-color": "#c2704a",
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.10, 9, 0.20, 13, 0.30],
+        "fill-outline-color": "#8f4f31"
+      }
+    },
+    {
+      "id": "public-land-private",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": ["==", ["get", "agency"], "PRIVATE"],
+      "layout": { "visibility": "none" },
+      "paint": {
+        "fill-color": "#b0b0b0",
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.08, 9, 0.14, 13, 0.20],
+        "fill-outline-color": "#8a8a8a"
+      }
+    },
+    {
+      "id": "wilderness",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "wilderness",
+      "layout": { "visibility": "none" },
+      "paint": {
+        "fill-color": "#2f5d43",
+        "fill-opacity": 0.22,
+        "fill-outline-color": "#1f4530"
+      }
+    },
+    {
+      "id": "contours",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "contours",
+      "layout": { "visibility": "none" },
+      "paint": {
+        "line-color": "#9a8265",
+        "line-width": [
+          "case",
+          ["==", ["%", ["get", "elevation"], 200], 0],
+          1.1,
+          0.5
+        ],
+        "line-opacity": 0.7
+      }
+    },
+    {
+      "id": "cell-coverage",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "cell_coverage",
+      "layout": { "visibility": "none" },
+      "paint": {
+        "fill-color": "#4a90c2",
+        "fill-opacity": 0.18
+      }
+    },
+    {
+      "id": "mvum-routes-dispersed",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "mvum_routes",
+      "filter": ["to-boolean", ["get", "dispersed_camping"]],
+      "layout": { "visibility": "visible", "line-cap": "round" },
+      "paint": {
+        "line-color": "#c25a2f",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 14, 2.4],
+        "line-dasharray": [1, 0]
+      }
+    },
+    {
+      "id": "mvum-routes-other",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "mvum_routes",
+      "filter": ["!", ["to-boolean", ["get", "dispersed_camping"]]],
+      "layout": { "visibility": "none", "line-cap": "round" },
+      "paint": {
+        "line-color": "#8a6a4a",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 14, 2.4],
+        "line-dasharray": [3, 2]
+      }
+    },
+    {
+      "id": "trails",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "trails",
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "line-color": "#6b4f2a",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 15, 1.8],
+        "line-dasharray": [2, 2]
+      }
+    },
+    {
+      "id": "closures",
+      "type": "fill",
+      "source": "backcountry",
+      "source-layer": "closures",
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "fill-color": "#c0392b",
+        "fill-opacity": 0.4,
+        "fill-outline-color": "#7d1f16"
+      }
+    },
+    {
+      "id": "spots",
+      "type": "circle",
+      "source": "backcountry",
+      "source-layer": "spots",
+      "layout": { "visibility": "visible" },
+      "paint": {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          8, ["+", 2, ["*", 2, ["get", "score"]]],
+          14, ["+", 5, ["*", 6, ["get", "score"]]]
+        ],
+        "circle-color": [
+          "interpolate", ["linear"], ["get", "obscurity"],
+          0, "#8a8a8a",
+          1, "#1e7a4a"
+        ],
+        "circle-stroke-width": 1.2,
+        "circle-stroke-color": "#ffffff"
+      }
+    }
+  ]
+}

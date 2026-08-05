@@ -1,0 +1,40 @@
+name: Deploy web app to R2
+
+on:
+  push:
+    branches:
+      - main
+      - claude/map-ui-redesign-fhhhxr
+    paths:
+      - "index.html"
+      - "style.json"
+      - ".github/workflows/deploy-r2.yml"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync web files to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          # Upload the app's web files explicitly. Intentionally not a
+          # `sync --delete`: the bucket also holds large data files
+          # (the .pmtiles map data, the Android APK) that don't live in
+          # this repo, and a delete-sync would remove them.
+          aws s3 cp index.html "s3://${R2_BUCKET}/index.html" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=60"
+
+          aws s3 cp style.json "s3://${R2_BUCKET}/style.json" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/json" \
+            --cache-control "public, max-age=60"
