@@ -36,29 +36,35 @@
   #map { position: absolute; inset: 0; background: var(--bg); }
   button { font: inherit; color: inherit; }
 
-  /* ---- Minimal top bar ---- */
+  /* ---- onX-style top bar: dark translucent chrome over the imagery ---- */
   #bar {
     position: absolute; z-index: 3; top: max(10px, env(safe-area-inset-top)); left: 10px; right: 10px;
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; justify-content: space-between;
   }
-  .pill {
-    background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow);
-    border-radius: 999px; display: flex; align-items: center;
+  .chrome-btn {
+    width: 42px; height: 42px; flex: none; border: none; cursor: pointer;
+    border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    background: rgba(20,22,18,0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.3);
   }
-  #title-pill {
-    padding: 9px 14px 9px 12px; font-weight: 700; font-size: 15px;
-    cursor: pointer; user-select: none; gap: 7px; border: 1px solid var(--border);
-    background: var(--card); border-radius: 999px; box-shadow: var(--shadow);
+  .chrome-btn.active { background: var(--accent); color: var(--accent-ink); }
+  #title-pill { border: none; background: none; padding: 0; }
+  #wordmark {
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    cursor: pointer; user-select: none; padding: 4px 10px;
   }
-  #title-pill svg { flex: none; }
-  #title-pill .region { color: var(--muted); font-weight: 500; font-size: 13px; }
-  .icon-btn {
-    margin-left: auto; width: 40px; height: 40px; flex: none;
-    border: 1px solid var(--border); background: var(--card);
-    box-shadow: var(--shadow); cursor: pointer; border-radius: 999px;
-    display: flex; align-items: center; justify-content: center;
+  #wordmark .word {
+    font-weight: 800; font-size: 16px; letter-spacing: .12em; color: #fff;
+    text-shadow: 0 1px 6px rgba(0,0,0,.6);
   }
-  .icon-btn.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  #wordmark .region {
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; color: rgba(255,255,255,.85);
+    text-shadow: 0 1px 4px rgba(0,0,0,.6);
+  }
+  #rail {
+    position: absolute; z-index: 3; right: 10px; top: calc(max(10px, env(safe-area-inset-top)) + 54px);
+    display: flex; flex-direction: column; gap: 8px;
+  }
 
   /* ---- Scrim behind open sheets ---- */
   #scrim {
@@ -128,13 +134,23 @@
   <div id="scrim"></div>
 
   <div id="bar">
-    <button id="title-pill" type="button">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 19h18L14.5 8 10 14.5 7 10.5 3 19z" fill="currentColor" opacity=".85"/></svg>
-      <span>Backcountry</span>
-      <span class="region" id="region-label"></span>
+    <button id="menu-btn" type="button" class="chrome-btn" title="About">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
-    <button id="layers-btn" type="button" class="pill icon-btn" title="Map layers">
+    <button id="title-pill" type="button">
+      <div id="wordmark">
+        <span class="word">BACKCOUNTRY</span>
+        <span class="region" id="region-label"></span>
+      </div>
+    </button>
+    <button id="layers-btn" type="button" class="chrome-btn" title="Map layers">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M2 13l10 5 10-5" stroke-linecap="round"/><path d="M2 18l10 5 10-5" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+
+  <div id="rail">
+    <button id="recenter-btn" type="button" class="chrome-btn" title="Recenter">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round"/></svg>
     </button>
   </div>
 
@@ -168,8 +184,10 @@
       if (!isError) setTimeout(() => statusEl.classList.add('hidden'), 2200);
     };
 
+    const menuBtn = document.getElementById('menu-btn');
     const titlePill = document.getElementById('title-pill');
     const layersBtn = document.getElementById('layers-btn');
+    const recenterBtn = document.getElementById('recenter-btn');
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
     const scrim = document.getElementById('scrim');
@@ -190,51 +208,55 @@
         scrim.classList.add('open');
       }
     }
-    titlePill.onclick = () => toggleSheet(aboutSheet, null);
+    menuBtn.onclick = () => toggleSheet(aboutSheet, menuBtn);
+    titlePill.onclick = () => toggleSheet(aboutSheet, menuBtn);
     layersBtn.onclick = () => toggleSheet(layersSheet, layersBtn);
     scrim.onclick = closeSheets;
 
     // Plain-language layer groups. Colors here double as the legend —
-    // what you see in the toggle list is what you see on the map.
+    // what you see in the toggle list is what you see on the map. Some
+    // fills have a companion "-label" layer (area names) that isn't
+    // listed separately here — toggling the fill toggles its label too,
+    // see buildLayerPanel below.
     const LAYER_GROUPS = [
       {
         title: 'Land Ownership',
         items: [
-          { id: 'public-land-usfs', label: 'National Forest', color: '#3f7d54' },
-          { id: 'public-land-blm', label: 'BLM Land', color: '#d4a76a' },
-          { id: 'public-land-nps', label: 'National Park', color: '#8a6fae' },
-          { id: 'public-land-state', label: 'State Trust Land', color: '#4a90c2' },
-          { id: 'public-land-fws', label: 'Fish & Wildlife', color: '#c2704a' },
+          { id: 'public-land-usfs', label: 'National Forest', color: '#4f9d68' },
+          { id: 'public-land-blm', label: 'BLM Land', color: '#e0b073' },
+          { id: 'public-land-nps', label: 'National Park', color: '#a98fd2' },
+          { id: 'public-land-state', label: 'State Trust Land', color: '#5fa8dd' },
+          { id: 'public-land-fws', label: 'Fish & Wildlife', color: '#d98f66' },
+          { id: 'public-land-dod', label: 'Military (Restricted)', color: '#b23a3a' },
           { id: 'wilderness', label: 'Wilderness Area', color: '#2f5d43' },
-          { id: 'public-land-private', label: 'Private Land', color: '#b0b0b0' },
         ],
       },
       {
         title: 'Trails & Roads',
         items: [
-          { id: 'trails', label: 'Hiking Trails', color: '#6b4f2a', line: true },
-          { id: 'mvum-routes-dispersed', label: 'Dispersed Camping Roads', color: '#c25a2f', line: true },
-          { id: 'mvum-routes-other', label: 'Forest Roads', color: '#8a6a4a', line: true },
+          { id: 'trails', label: 'Hiking Trails', color: '#fff4d6', line: true },
+          { id: 'mvum-routes-dispersed', label: 'Dispersed Camping Roads', color: '#ff9a52', line: true },
+          { id: 'mvum-routes-other', label: 'Forest Roads', color: '#e8d9b8', line: true },
         ],
       },
       {
         title: 'Terrain',
         items: [
           { id: 'hillshade', label: 'Terrain Shading', color: '#8a8a8a', line: true },
-          { id: 'contours', label: 'Elevation Contours', color: '#9a8265', line: true },
+          { id: 'contours', label: 'Elevation Contours', color: '#f2e9d8', line: true },
         ],
       },
       {
         title: 'Conditions',
         items: [
-          { id: 'closures', label: 'Closures', color: '#c0392b' },
+          { id: 'closures', label: 'Closures', color: '#e53e2e' },
           { id: 'cell-coverage', label: 'Cell Coverage', color: '#4a90c2' },
         ],
       },
       {
-        title: 'Camping',
+        title: 'Camping & Recreation',
         items: [
-          { id: 'spots', label: 'Top Camp Spots', color: '#1e7a4a' },
+          { id: 'developed-rec', label: 'Campgrounds & Rec Sites', color: '#ff9a52' },
         ],
       },
     ];
@@ -249,18 +271,9 @@
           .then((r) => r.json()).catch(() => null),
       ]);
 
-      const hasSpots = Boolean(manifest && manifest.spot_count);
-      if (!hasSpots) {
-        // No curated camp-spot data published for this region yet — drop the
-        // dead toggle instead of shipping a checkbox that does nothing, and
-        // strip the layer from the style so it never renders empty circles.
-        const group = LAYER_GROUPS.find((g) => g.title === 'Camping');
-        LAYER_GROUPS.splice(LAYER_GROUPS.indexOf(group), 1);
-        style.layers = style.layers.filter((l) => l.id !== 'spots');
-      }
-
-      const centre = manifest && manifest.bbox && manifest.bbox.length === 4
-        ? [(manifest.bbox[0] + manifest.bbox[2]) / 2, (manifest.bbox[1] + manifest.bbox[3]) / 2]
+      const bbox = manifest && manifest.bbox && manifest.bbox.length === 4 ? manifest.bbox : null;
+      const centre = bbox
+        ? [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
         : [-111.5, 39.5];
 
       // The published data (vector + terrain pmtiles) only has tiles from
@@ -282,13 +295,21 @@
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
       map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-right');
 
+      recenterBtn.onclick = () => {
+        if (bbox) {
+          map.fitBounds(bbox, { padding: 40, duration: 600 });
+        } else {
+          map.flyTo({ center: centre, zoom: 7.4 });
+        }
+      };
+
       map.on('error', (event) => {
         say(`Map error: ${event.error?.message ?? 'unknown'}`, true);
         console.error(event.error);
       });
 
       map.on('load', () => {
-        regionLabel.textContent = manifest ? `· ${manifest.state_name}` : '';
+        regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
         buildLayerPanel(map, style);
       });
@@ -316,11 +337,16 @@
           const row = document.createElement('label');
           row.className = 'row';
 
+          const labelId = `${item.id}-label`;
+          const hasLabel = styleIds.has(labelId);
+
           const box = document.createElement('input');
           box.type = 'checkbox';
           box.checked = visible;
           box.onchange = () => {
-            map.setLayoutProperty(item.id, 'visibility', box.checked ? 'visible' : 'none');
+            const vis = box.checked ? 'visible' : 'none';
+            map.setLayoutProperty(item.id, 'visibility', vis);
+            if (hasLabel) map.setLayoutProperty(labelId, 'visibility', vis);
           };
 
           const swatch = document.createElement('span');
