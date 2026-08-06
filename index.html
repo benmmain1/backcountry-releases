@@ -116,6 +116,21 @@
   #layers-body .label { font-size: 14px; flex: 1; }
   #layers-body .note { font-size: 12px; color: var(--muted); margin: -2px 0 8px; }
 
+  /* ---- Coverage pins: mark regions with data when zoomed out to find them ---- */
+  .region-pin {
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(20,22,18,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    color: #fff; padding: 7px 14px 7px 10px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 700; letter-spacing: .01em; white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35);
+    border: 1.5px dashed var(--accent);
+    cursor: pointer; opacity: 1; transition: opacity .2s ease;
+  }
+  /* !important needed: maplibregl.Marker sets an inline opacity style on
+     its managed element, which otherwise beats this class rule. */
+  .region-pin.hidden { opacity: 0 !important; pointer-events: none; }
+  .region-pin .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+
   #status {
     position: absolute; bottom: 12px; left: 12px; z-index: 2;
     background: rgba(0,0,0,.72); color: #fff; padding: 6px 10px;
@@ -301,11 +316,113 @@
         console.error(event.error);
       });
 
-      map.on('load', () => {
+      map.on('load', async () => {
         regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
         buildLayerPanel(map, style);
+
+        const regions = await loadAvailableRegions(manifest);
+        addRegionCoverage(map, regions);
       });
+    }
+
+    // Regions with a built data pack are the only spots with real content —
+    // everywhere else on the map is bare satellite imagery. Mark them with a
+    // dashed boundary + a pin so they're easy to find while panning/zoomed
+    // out on the world view, per index.json published alongside the packs.
+    const REGION_INDEX_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/storage/v1/object/public/region-packs/index.json';
+    const REGION_BASE_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/storage/v1/object/public/region-packs/';
+
+    async function loadAvailableRegions(primaryManifest) {
+      const regions = [];
+      if (primaryManifest && primaryManifest.bbox) {
+        regions.push({
+          slug: (primaryManifest.state || 'ut').toLowerCase(),
+          name: primaryManifest.state_name,
+          bbox: primaryManifest.bbox,
+        });
+      }
+      try {
+        const index = await fetch(REGION_INDEX_URL).then((r) => r.json());
+        const missing = (index.regions || []).filter((r) => !regions.some((x) => x.slug === r.slug));
+        const fetched = await Promise.all(missing.map((r) =>
+          fetch(REGION_BASE_URL + r.files.manifest)
+            .then((res) => res.json())
+            .then((m) => ({ slug: r.slug, name: r.state_name, bbox: m.bbox }))
+            .catch(() => null)
+        ));
+        for (const found of fetched) if (found && found.bbox) regions.push(found);
+      } catch (err) {
+        console.warn('Could not load region index', err);
+      }
+      return regions;
+    }
+
+    function bboxToPolygon([w, s, e, n]) {
+      return { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] };
+    }
+
+    function addRegionCoverage(map, regions) {
+      if (!regions.length) return;
+
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3f7d54';
+
+      map.addSource('available-regions', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: regions.map((r) => ({
+            type: 'Feature',
+            properties: { slug: r.slug, name: r.name },
+            geometry: bboxToPolygon(r.bbox),
+          })),
+        },
+      });
+
+      map.addLayer({
+        id: 'available-regions-fill',
+        type: 'fill',
+        source: 'available-regions',
+        paint: {
+          'fill-color': accent,
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.18, 5, 0.1, 7, 0],
+        },
+      });
+
+      map.addLayer({
+        id: 'available-regions-line',
+        type: 'line',
+        source: 'available-regions',
+        paint: {
+          'line-color': accent,
+          'line-dasharray': [2, 2],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 2, 1.2, 9, 2],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.95, 5, 0.8, 9, 0.35],
+        },
+      });
+
+      // Pins fade in once zoomed out past the region itself (default view
+      // opens already inside Utah, so they start hidden and appear as soon
+      // as you pan/zoom out to the wider world map).
+      const PIN_ZOOM_THRESHOLD = 6.3;
+      const pins = regions.map((r) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'region-pin';
+        el.innerHTML = `<span class="dot"></span>${r.name} · Available`;
+        el.onclick = () => map.fitBounds(r.bbox, { padding: 60, duration: 700 });
+
+        const centre = [(r.bbox[0] + r.bbox[2]) / 2, (r.bbox[1] + r.bbox[3]) / 2];
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(centre).addTo(map);
+        return marker;
+      });
+
+      const updatePinVisibility = () => {
+        const zoomedOut = map.getZoom() < PIN_ZOOM_THRESHOLD;
+        for (const pin of pins) pin.getElement().classList.toggle('hidden', !zoomedOut);
+      };
+      map.on('zoom', updatePinVisibility);
+      updatePinVisibility();
     }
 
     function buildLayerPanel(map, style) {
