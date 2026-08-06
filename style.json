@@ -1,5 +1,6 @@
 {
   "version": 8,
+  "glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
   "sources": {
     "backcountry": {
       "type": "vector",
@@ -144,6 +145,7 @@
       "layout": {
         "visibility": "visible",
         "text-field": ["get", "forestname"],
+        "text-font": ["Open Sans Regular"],
         "text-size": 11,
         "text-transform": "uppercase",
         "text-letter-spacing": 0.08,
@@ -166,6 +168,7 @@
       "layout": {
         "visibility": "none",
         "text-field": ["get", "wildernessname"],
+        "text-font": ["Open Sans Regular"],
         "text-size": 11,
         "text-transform": "uppercase",
         "text-letter-spacing": 0.08,
@@ -287,6 +290,7 @@
       "layout": {
         "visibility": "visible",
         "text-field": ["get", "recareaname"],
+        "text-font": ["Open Sans Regular"],
         "text-size": 11,
         "text-offset": [0, 1.1],
         "text-anchor": "top",
