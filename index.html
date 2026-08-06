@@ -276,18 +276,11 @@
         ? [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
         : [-111.5, 39.5];
 
-      // The published data (vector + terrain pmtiles) only has tiles from
-      // zoom 6 up — below that there's nothing to draw and the map goes
-      // blank. Cap zoom-out at the data's actual floor instead of letting
-      // people scroll past it into an empty map.
-      const minZoom = (manifest && manifest.min_zoom) || 6;
-
       const map = new maplibregl.Map({
         container: 'map',
         style,
         center: centre,
         zoom: 7.4,
-        minZoom,
         hash: true,
         attributionControl: { compact: true },
       });
