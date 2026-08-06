@@ -146,6 +146,35 @@
   .region-pin.hidden { opacity: 0 !important; pointer-events: none; }
   .region-pin .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
 
+  /* ---- Info card: tap a trail or rec site to see details ---- */
+  #info-sheet .info-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  #info-sheet .info-kicker { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: 700; color: var(--accent); margin: 2px 0 3px; }
+  #info-sheet h1 { margin: 0; }
+  #info-close {
+    flex: none; width: 28px; height: 28px; border: none; background: var(--border);
+    border-radius: 50%; cursor: pointer; color: var(--text);
+    display: flex; align-items: center; justify-content: center; margin-top: 2px;
+  }
+  .info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+  .info-badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--border); white-space: nowrap; }
+  .info-badge.status-open { background: rgba(63,125,84,.16); color: var(--accent); }
+  .info-badge.status-closed { background: rgba(200,40,30,.14); color: #c8281e; }
+  .info-facts { display: flex; flex-direction: column; }
+  .info-facts .fact-row {
+    display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px;
+    padding: 7px 0; border-top: 1px solid var(--border);
+  }
+  .info-facts .fact-row:first-child { border-top: none; }
+  .info-facts .fact-label { color: var(--muted); flex: none; }
+  .info-facts .fact-value { font-weight: 600; text-align: right; }
+  .info-desc { white-space: pre-line; }
+  #info-sheet .info-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; margin: 14px 0 4px; }
+  .info-link {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+    padding: 9px 15px; background: var(--border); color: var(--text);
+    text-decoration: none; font-weight: 700; font-size: 13.5px; border-radius: 999px;
+  }
+
   #status {
     position: absolute; bottom: 12px; left: 12px; z-index: 2;
     background: rgba(0,0,0,.72); color: #fff; padding: 6px 10px;
@@ -210,6 +239,20 @@
     <div id="regions-body"></div>
   </div>
 
+  <div id="info-sheet" class="sheet">
+    <div class="grabber"></div>
+    <div class="info-head">
+      <div>
+        <div class="info-kicker" id="info-kicker"></div>
+        <h1 id="info-title"></h1>
+      </div>
+      <button id="info-close" type="button" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div id="info-body"></div>
+  </div>
+
   <div id="status"><span class="dot"></span><span id="status-text">Loading map…</span></div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -232,6 +275,8 @@
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
     const regionsSheet = document.getElementById('regions-sheet');
+    const infoSheet = document.getElementById('info-sheet');
+    const infoCloseBtn = document.getElementById('info-close');
     const scrim = document.getElementById('scrim');
     const regionLabel = document.getElementById('region-label');
 
@@ -241,6 +286,7 @@
       layersBtn.classList.remove('active');
       regionsSheet.classList.remove('open');
       regionsBtn.classList.remove('active');
+      infoSheet.classList.remove('open');
       scrim.classList.remove('open');
     }
     function toggleSheet(sheet, btn) {
@@ -256,6 +302,7 @@
     titlePill.onclick = () => toggleSheet(aboutSheet, menuBtn);
     layersBtn.onclick = () => toggleSheet(layersSheet, layersBtn);
     regionsBtn.onclick = () => toggleSheet(regionsSheet, regionsBtn);
+    infoCloseBtn.onclick = closeSheets;
     scrim.onclick = closeSheets;
 
     // Plain-language layer groups. Colors here double as the legend —
@@ -350,10 +397,188 @@
         regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
         buildLayerPanel(map, style);
+        setupInfoClicks(map, style);
 
         const regions = await loadAvailableRegions(manifest);
         addRegionCoverage(map, regions);
         buildRegionsPanel(map, regions);
+      });
+    }
+
+    // ---- Tap a trail or rec site to see its details ----
+
+    const TRAIL_CLASS_NAMES = {
+      1: 'Minimal / Undeveloped',
+      2: 'Simple / Minor Development',
+      3: 'Developed / Improved',
+      4: 'Highly Developed',
+      5: 'Fully Developed',
+    };
+    const TRAIL_TYPE_NAMES = { TERRA: 'Land Trail', SNOW: 'Snow Trail', WATER: 'Water Trail' };
+
+    // Vector tile properties come from third-party USFS/BLM datasets, so
+    // never trust them into innerHTML — this route (assign to a detached
+    // element's innerHTML, then read back only .textContent) strips any
+    // markup instead of rendering it, and nothing here ever touches the
+    // live DOM.
+    const htmlScrubber = document.createElement('div');
+    function stripHtml(value) {
+      if (!value) return '';
+      htmlScrubber.innerHTML = value;
+      htmlScrubber.querySelectorAll('script, style').forEach((el) => el.remove());
+      return htmlScrubber.textContent.replace(/\s+/g, ' ').trim();
+    }
+    function titleCase(value) {
+      if (!value) return '';
+      return value.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    function factRow(label, value) {
+      if (!value) return null;
+      const row = document.createElement('div');
+      row.className = 'fact-row';
+      const l = document.createElement('span');
+      l.className = 'fact-label';
+      l.textContent = label;
+      const v = document.createElement('span');
+      v.className = 'fact-value';
+      v.textContent = value;
+      row.append(l, v);
+      return row;
+    }
+
+    function badge(text, extraClass) {
+      const el = document.createElement('span');
+      el.className = 'info-badge' + (extraClass ? ` ${extraClass}` : '');
+      el.textContent = text;
+      return el;
+    }
+
+    function paragraph(text, extraClass) {
+      const p = document.createElement('p');
+      if (extraClass) p.className = extraClass;
+      p.textContent = text;
+      return p;
+    }
+
+    function sectionTitle(text) {
+      const h = document.createElement('div');
+      h.className = 'info-section-title';
+      h.textContent = text;
+      return h;
+    }
+
+    function externalLink(url, label) {
+      if (!url || !/^https:\/\//i.test(url)) return null;
+      const a = document.createElement('a');
+      a.className = 'info-link';
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = label;
+      return a;
+    }
+
+    function openInfoCard(kicker, title, buildBody) {
+      document.getElementById('info-kicker').textContent = kicker;
+      document.getElementById('info-title').textContent = title || 'Untitled';
+      const body = document.getElementById('info-body');
+      body.innerHTML = '';
+      buildBody(body);
+      closeSheets();
+      infoSheet.classList.add('open');
+      scrim.classList.add('open');
+    }
+
+    function showTrailCard(props) {
+      const name = titleCase(props.trail_name) || `Trail ${props.trail_no || ''}`.trim();
+      openInfoCard('Trail', name, (body) => {
+        const badges = document.createElement('div');
+        badges.className = 'info-badges';
+        if (props.trail_no) badges.append(badge(`Trail #${props.trail_no}`));
+        if (props.trail_class && TRAIL_CLASS_NAMES[props.trail_class]) {
+          badges.append(badge(`Class ${props.trail_class} · ${TRAIL_CLASS_NAMES[props.trail_class]}`));
+        }
+        if (badges.children.length) body.append(badges);
+
+        const facts = document.createElement('div');
+        facts.className = 'info-facts';
+        const length = props.gis_miles || props.segment_length;
+        [
+          factRow('Type', TRAIL_TYPE_NAMES[props.trail_type] || titleCase(props.trail_type)),
+          factRow('Length (this segment)', length ? `${Number(length).toFixed(1)} mi` : null),
+          factRow('Surface', titleCase(props.trail_surface)),
+          factRow('Managing forest', titleCase(props.forestname)),
+          factRow('Accessibility', titleCase(props.accessibility_status)),
+        ].forEach((row) => row && facts.append(row));
+        body.append(facts);
+      });
+    }
+
+    function showRecSiteCard(props) {
+      const name = props.recareaname || 'Rec Site';
+      openInfoCard('Rec Site', name, (body) => {
+        const badges = document.createElement('div');
+        badges.className = 'info-badges';
+        if (props.markeractivity) badges.append(badge(props.markeractivity));
+        if (props.openstatus === 'open') badges.append(badge('Open', 'status-open'));
+        if (props.openstatus === 'closed') badges.append(badge('Closed', 'status-closed'));
+        if (badges.children.length) body.append(badges);
+
+        const facts = document.createElement('div');
+        facts.className = 'info-facts';
+        const season = props.open_season_start && props.open_season_end
+          ? `${props.open_season_start} – ${props.open_season_end}` : null;
+        [
+          factRow('Forest', props.forestname),
+          factRow('Season', season),
+          factRow('Hours', props.operational_hours),
+        ].forEach((row) => row && facts.append(row));
+        if (facts.children.length) body.append(facts);
+
+        const desc = stripHtml(props.recareadescription);
+        if (desc) body.append(paragraph(desc, 'info-desc'));
+
+        const fees = stripHtml(props.feedescription);
+        if (fees) { body.append(sectionTitle('Fees')); body.append(paragraph(fees)); }
+
+        const reservations = stripHtml(props.reservation_info);
+        if (reservations) { body.append(sectionTitle('Reservations')); body.append(paragraph(reservations)); }
+
+        const access = stripHtml(props.accessibility);
+        if (access) { body.append(sectionTitle('Getting there')); body.append(paragraph(access)); }
+
+        const restrictions = stripHtml(props.restrictions);
+        if (restrictions) { body.append(sectionTitle('Restrictions')); body.append(paragraph(restrictions)); }
+
+        const link = externalLink(props.recareaurl, 'Official page ↗');
+        if (link) body.append(link);
+      });
+    }
+
+    function setupInfoClicks(map, style) {
+      const styleIds = new Set(style.layers.map((l) => l.id));
+      const clickableLayers = ['developed-rec', 'trails'].filter((id) => styleIds.has(id));
+      if (!clickableLayers.length) return;
+
+      for (const id of clickableLayers) {
+        map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+      }
+
+      map.on('click', (e) => {
+        const hitBox = [
+          [e.point.x - 6, e.point.y - 6],
+          [e.point.x + 6, e.point.y + 6],
+        ];
+        if (clickableLayers.includes('developed-rec')) {
+          const [rec] = map.queryRenderedFeatures(hitBox, { layers: ['developed-rec'] });
+          if (rec) return showRecSiteCard(rec.properties);
+        }
+        if (clickableLayers.includes('trails')) {
+          const [trail] = map.queryRenderedFeatures(hitBox, { layers: ['trails'] });
+          if (trail) return showTrailCard(trail.properties);
+        }
       });
     }
 
