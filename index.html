@@ -189,6 +189,12 @@
   .info-badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--border); white-space: nowrap; }
   .info-badge.status-open { background: rgba(63,125,84,.16); color: var(--accent); }
   .info-badge.status-closed { background: rgba(200,40,30,.14); color: #c8281e; }
+  .info-badge.status-watch { background: rgba(224,176,115,.22); color: #a8712a; }
+  .info-badge.status-danger { background: rgba(200,40,30,.16); color: #c8281e; }
+  .wildfire-note { background: rgba(200,40,30,.1); border: 1px solid rgba(200,40,30,.25); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+  .wildfire-note.watch { background: rgba(224,176,115,.14); border-color: rgba(224,176,115,.4); }
+  .wildfire-note p { margin: 0; color: var(--text); font-size: 13px; }
+  .satellite-thumb { display: block; width: 100%; height: 160px; object-fit: cover; border-radius: 10px; margin: 2px 0 12px; background: var(--border); }
   .info-facts { display: flex; flex-direction: column; }
   .info-facts .fact-row {
     display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px;
@@ -468,8 +474,10 @@
       map.on('load', async () => {
         regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
+        const gemSpots = addGemSpotsLayer(map);
         buildLayerPanel(map, style, manifest);
-        setupInfoClicks(map, style);
+        addGemSpotsPanelRow(map, gemSpots);
+        setupInfoClicks(map, style, gemSpots.layerId);
 
         const regions = await loadAvailableRegions(manifest);
         addRegionCoverage(map, regions);
@@ -514,6 +522,76 @@
     };
     const DEFAULT_ACTIVITY_STYLE = { color: '#8a8f83', icon: ICON_SVG.pin };
     const TRAIL_STYLE = { color: '#6b8f5a', icon: ICON_SVG.mountain };
+
+    // ---- Recommended "gem" spots (curated_spots table) ----
+
+    const FOREST_NAMES = {
+      USFS_R04_FISHLAKE: 'Fishlake National Forest',
+      USFS_R04_UWC: 'Uinta-Wasatch-Cache National Forest',
+      USFS_R04_DIXIE: 'Dixie National Forest',
+      USFS_R04_ASHLEY: 'Ashley National Forest',
+      USFS_R04_MANTI_LASAL: 'Manti-La Sal National Forest',
+    };
+    const VIEW_TYPE_LABELS = {
+      alpine_meadow: 'Alpine Meadow', lake: 'Lake', canyon: 'Canyon', waterfall: 'Waterfall',
+      ridge_summit: 'Ridge / Summit', valley_overlook: 'Valley Overlook', river: 'River',
+      desert_slickrock: 'Desert / Slickrock', forest: 'Forest', wildflowers: 'Wildflowers',
+    };
+    const ACCESS_TYPE_LABELS = {
+      drive_in_easy: 'Drive-in (any vehicle)', drive_in_high_clearance: 'Drive-in (high clearance/4x4)',
+      backpack_short: 'Short backpack (under ~4 mi)', backpack_long: 'Long backpack (4+ mi)',
+    };
+    const WILDFIRE_LABELS = {
+      active_nearby: 'Active wildfire nearby', watch: 'Wildfire in the area',
+    };
+    const GEM_ICON_SVG = {
+      hammock: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6v3M21 6v3M3 9c4 6 14 6 18 0"/></svg>',
+      overlook: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M4 20 10 6l3 5 2-3 5 12"/><circle cx="18" cy="6" r="2"/></svg>',
+    };
+
+    // One consistent fill color for every gem spot — it's the category
+    // identity (matches campgrounds' orange, trails' cream, etc. each being
+    // one color in the legend), not a per-spot signal. Wildfire risk still
+    // shows on the map itself via the stroke (ring), not the fill, plus the
+    // full warning in the popup — see GEM_SPOT_STROKE_COLOR below.
+    const GEM_SPOT_FILL_COLOR = '#e0529a';
+    const GEM_SPOT_STROKE_COLOR = [
+      'match', ['get', 'wildfire_status'],
+      'active_nearby', '#c8281e',
+      'watch', '#e0b073',
+      '#ffffff',
+    ];
+    const GEM_SPOT_STROKE_WIDTH = [
+      'match', ['get', 'wildfire_status'],
+      'active_nearby', 3,
+      'watch', 2.5,
+      1.5,
+    ];
+
+    function chooseGemIcon(props) {
+      const viewTypes = props.view_type || [];
+      const campTypes = props.camp_type || [];
+      if (viewTypes.includes('waterfall')) return { color: '#5fa8dd', icon: ICON_SVG.wave };
+      if (viewTypes.includes('lake')) return { color: '#5fa8dd', icon: ICON_SVG.fish };
+      if (viewTypes.includes('ridge_summit') || viewTypes.includes('valley_overlook') || viewTypes.includes('canyon')) {
+        return { color: '#c99a5b', icon: GEM_ICON_SVG.overlook };
+      }
+      if (campTypes.includes('hammock') && !campTypes.includes('tent')) {
+        return { color: '#4f9d68', icon: GEM_ICON_SVG.hammock };
+      }
+      return { color: '#4f9d68', icon: ICON_SVG.tent };
+    }
+
+    // A close-in crop from the same keyless ArcGIS World Imagery service the
+    // satellite basemap itself uses (see app/src/map/style.ts) — a plain
+    // <img src> works without any CORS concern since nothing here reads the
+    // pixels back into JS.
+    function satelliteThumbUrl(lat, lon) {
+      const padDeg = 0.006; // roughly a 1300 ft square at these latitudes
+      const bbox = [lon - padDeg, lat - padDeg, lon + padDeg, lat + padDeg].join(',');
+      return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?' +
+        new URLSearchParams({ bbox, bboxSR: '4326', imageSR: '4326', size: '400,300', format: 'jpg', f: 'image' });
+    }
 
     function setInfoIcon(style) {
       const el = document.getElementById('info-icon');
@@ -780,16 +858,84 @@
       }, centroidOf(feature.geometry));
     }
 
-    function setupInfoClicks(map, style) {
+    function showGemSpotCard(feature) {
+      const props = feature.properties;
+      // MapLibre serializes GeoJSON array/object properties as JSON strings
+      // on the rendered feature, not live arrays — parse them back out.
+      const parseArr = (v) => { try { return Array.isArray(v) ? v : JSON.parse(v || '[]'); } catch { return []; } };
+      const viewTypes = parseArr(props.view_type);
+      const campTypes = parseArr(props.camp_type);
+      const sources = parseArr(props.sources);
+
+      const style = chooseGemIcon({ view_type: viewTypes, camp_type: campTypes });
+      setInfoIcon(style);
+      openInfoCard('Recommended Spot · ' + (FOREST_NAMES[props.forest_unit_id] || 'Utah'), props.name, (body) => {
+        const [lng, lat] = feature.geometry.coordinates;
+
+        const img = document.createElement('img');
+        img.className = 'satellite-thumb';
+        img.loading = 'lazy';
+        img.alt = 'Satellite view of ' + props.name;
+        img.src = satelliteThumbUrl(lat, lng);
+        body.append(img);
+
+        if (props.wildfire_status === 'active_nearby' || props.wildfire_status === 'watch') {
+          const note = document.createElement('div');
+          note.className = 'wildfire-note' + (props.wildfire_status === 'watch' ? ' watch' : '');
+          const p = document.createElement('p');
+          p.textContent = '🔥 ' + (props.wildfire_note || WILDFIRE_LABELS[props.wildfire_status]);
+          note.append(p);
+          body.append(note);
+        }
+
+        const badges = document.createElement('div');
+        badges.className = 'info-badges';
+        for (const vt of viewTypes) badges.append(badge(VIEW_TYPE_LABELS[vt] || titleCase(vt)));
+        for (const ct of campTypes) badges.append(badge(titleCase(ct)));
+        if (props.access_type) badges.append(badge(ACCESS_TYPE_LABELS[props.access_type] || titleCase(props.access_type)));
+        if (props.wilderness) badges.append(badge('Wilderness'));
+        if (badges.children.length) body.append(badges);
+
+        const facts = document.createElement('div');
+        facts.className = 'info-facts';
+        [
+          factRow('Forest', FOREST_NAMES[props.forest_unit_id]),
+          factRow('Elevation', props.elevation_ft ? `${Number(props.elevation_ft).toLocaleString()} ft` : null),
+          factRow('Best season', props.best_season),
+          factRow('Coordinate precision', titleCase(String(props.coordinate_confidence || '').replace(/-/g, ' '))),
+        ].forEach((row) => row && facts.append(row));
+        if (facts.children.length) body.append(facts);
+
+        if (props.description) body.append(paragraph(props.description, 'info-desc'));
+
+        if (props.distance_notes) { body.append(sectionTitle('Getting there')); body.append(paragraph(props.distance_notes)); }
+        if (props.legality_note) { body.append(sectionTitle('Legal to camp here')); body.append(paragraph(props.legality_note)); }
+
+        if (sources.length) {
+          body.append(sectionTitle('Sources'));
+          sources.forEach((url, i) => {
+            const link = externalLink(url, `Source ${i + 1} ↗`);
+            if (link) { link.style.marginRight = '8px'; body.append(link); }
+          });
+        }
+      }, feature.geometry.coordinates);
+    }
+
+    // gemLayerId is passed in separately from style-derived layers: the gem
+    // spots layer is added at runtime from a live Supabase query (see
+    // addGemSpotsLayer below), not baked into style.json, so it's never in
+    // styleIds and needs its own opt-in here once it actually exists.
+    function setupInfoClicks(map, style, gemLayerId) {
       const styleIds = new Set(style.layers.map((l) => l.id));
       // The label layer shares the same source features as the dot, so a
       // tap on the visible text (what people naturally aim for) resolves
       // to the same rec site as a tap on the tiny circle itself.
       const recLayers = ['developed-rec', 'developed-rec-label'].filter((id) => styleIds.has(id));
       const trailLayers = ['trails'].filter((id) => styleIds.has(id));
-      if (!recLayers.length && !trailLayers.length) return;
+      const gemLayers = gemLayerId ? [gemLayerId] : [];
+      if (!recLayers.length && !trailLayers.length && !gemLayers.length) return;
 
-      for (const id of [...recLayers, ...trailLayers]) {
+      for (const id of [...recLayers, ...trailLayers, ...gemLayers]) {
         map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -802,6 +948,12 @@
           [e.point.x - 16, e.point.y - 16],
           [e.point.x + 16, e.point.y + 16],
         ];
+        // Gem spots are checked first: they're the smaller, denser layer and
+        // most likely to sit on top of a rec-site dot at the same location.
+        if (gemLayers.length) {
+          const [gem] = map.queryRenderedFeatures(hitBox, { layers: gemLayers });
+          if (gem) return showGemSpotCard(gem);
+        }
         if (recLayers.length) {
           const [rec] = map.queryRenderedFeatures(hitBox, { layers: recLayers });
           if (rec) return showRecSiteCard(rec);
@@ -854,6 +1006,16 @@
     // out on the world view, per index.json published alongside the packs.
     const REGION_INDEX_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/storage/v1/object/public/region-packs/index.json';
     const REGION_BASE_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/storage/v1/object/public/region-packs/';
+
+    // Recommended "gem" spots — hand-researched dispersed camping/backpacking
+    // spots with exceptional views, live in a Postgres table rather than
+    // baked into the pmtiles archive, specifically so wildfire status can be
+    // refreshed on a schedule (see backcountry/curated_spots/README.md and
+    // the refresh-wildfire-status Supabase Edge Function) without waiting on
+    // a full region-pack rebuild. This key is Supabase's public anon/publishable
+    // key — safe to embed client-side, it can only SELECT via RLS.
+    const SUPABASE_ANON_KEY = 'sb_publishable_OX03_AnGtamkyR7USRwfGA_vmFEiyEb';
+    const GEM_SPOTS_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/rest/v1/curated_spots?select=*';
 
     async function loadAvailableRegions(primaryManifest) {
       const regions = [];
@@ -945,6 +1107,103 @@
       };
       map.on('zoom', updatePinVisibility);
       updatePinVisibility();
+    }
+
+    // Recommended "gem" spots — a live GeoJSON layer sourced straight from
+    // Supabase (curated_spots table), not the pmtiles archive: the whole
+    // point is that a background job can update wildfire_status on these
+    // rows and the map reflects it on next load, no region-pack rebuild.
+    // The layer/source is created synchronously (empty) so click handling
+    // and the layer-panel toggle can wire up immediately; the actual rows
+    // stream in a moment later via .loaded.
+    function addGemSpotsLayer(map) {
+      const sourceId = 'gem-spots-source';
+      const layerId = 'gem-spots';
+
+      map.addSource(sourceId, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: layerId,
+        type: 'circle',
+        source: sourceId,
+        paint: {
+          // Visible from a statewide view, not just once you've zoomed in
+          // close enough to stumble onto one — the whole point of the
+          // layer is browsing hundreds of spots, not hunting for dots.
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 5, 7, 6.5, 10, 8, 14, 11],
+          'circle-color': GEM_SPOT_FILL_COLOR,
+          'circle-stroke-width': GEM_SPOT_STROKE_WIDTH,
+          'circle-stroke-color': GEM_SPOT_STROKE_COLOR,
+          'circle-opacity': 0.92,
+        },
+      });
+
+      const loaded = (async () => {
+        try {
+          const resp = await fetch(GEM_SPOTS_URL, {
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+          });
+          if (!resp.ok) throw new Error(`Supabase fetch failed: ${resp.status}`);
+          const rows = await resp.json();
+          map.getSource(sourceId).setData({
+            type: 'FeatureCollection',
+            features: rows.map((row) => ({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [row.lon, row.lat] },
+              properties: row,
+            })),
+          });
+          return rows.length;
+        } catch (err) {
+          console.warn('Could not load recommended spots', err);
+          return 0;
+        }
+      })();
+
+      return { layerId, loaded };
+    }
+
+    // buildLayerPanel below only lists layers that already exist in
+    // style.json, since it derives its list from LAYER_GROUPS filtered by
+    // styleIds — gem-spots is added at runtime instead, so it gets its own
+    // group appended after that panel is built rather than folded into it.
+    function addGemSpotsPanelRow(map, gemSpots) {
+      const body = document.getElementById('layers-body');
+
+      const wrap = document.createElement('div');
+      wrap.className = 'group';
+      const heading = document.createElement('h2');
+      heading.textContent = 'Recommended Spots';
+      wrap.append(heading);
+
+      const row = document.createElement('label');
+      row.className = 'row';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = true;
+      box.onchange = () => {
+        map.setLayoutProperty(gemSpots.layerId, 'visibility', box.checked ? 'visible' : 'none');
+      };
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.background = GEM_SPOT_FILL_COLOR;
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = 'Gem Spots (live, wildfire-aware)';
+      row.append(box, swatch, label);
+      wrap.append(row);
+
+      const note = document.createElement('p');
+      note.className = 'group-note';
+      note.textContent = 'Loading curated spots…';
+      wrap.append(note);
+
+      body.append(wrap);
+
+      gemSpots.loaded.then((count) => {
+        note.textContent = count
+          ? `${count.toLocaleString()} hand-researched spots across Fishlake, Uinta-Wasatch-Cache, Dixie, Ashley, and Manti-La Sal — tap a dot for details. Red/amber dots mean an active wildfire is nearby, checked every 6 hours.`
+          : 'Could not load recommended spots right now — check your connection.';
+      });
     }
 
     function buildLayerPanel(map, style, manifest) {
