@@ -22,7 +22,28 @@ export type HighlightTag =
   | "wildflowers"
   | "fall-colors"
   | "slot-canyon"
-  | "mesa-view";
+  | "mesa-view"
+  | "meadow"
+  | "glacier-view"
+  | "big-peak-backdrop";
+
+export type Landscape =
+  | "Alpine & Summit"
+  | "Mountain Meadow"
+  | "Desert & Mesa"
+  | "Canyon & Gorge"
+  | "Forest"
+  | "Lakeside & River"
+  | "Coastal"
+  | "Grassland & Plateau";
+
+export type ViewOpenness =
+  | "panoramic-360"
+  | "open-vista"
+  | "partially-open"
+  | "framed";
+
+export type AccessType = "sedan" | "high-clearance-4wd" | "backpack-in";
 
 export interface CampingSpot {
   id: string;
@@ -34,6 +55,10 @@ export interface CampingSpot {
   elevation_ft: number | null;
   land_manager: string;
   access: string;
+  access_type: AccessType;
+  hike_in_distance_mi: number | null;
+  landscape: Landscape;
+  view_openness: ViewOpenness;
   highlight_tags: HighlightTag[];
   description: string;
   best_season: string;
@@ -59,6 +84,9 @@ export const HIGHLIGHT_TAG_LABELS: Record<HighlightTag, string> = {
   "fall-colors": "Fall Colors",
   "slot-canyon": "Slot Canyon",
   "mesa-view": "Mesa View",
+  meadow: "Meadow",
+  "glacier-view": "Glacier View",
+  "big-peak-backdrop": "Big Peak Backdrop",
 };
 
 export const REGIONS: Region[] = [
@@ -69,3 +97,34 @@ export const REGIONS: Region[] = [
   "Great Basin & Nevada",
   "Appalachians & Southeast",
 ];
+
+export const LANDSCAPES: Landscape[] = [
+  "Alpine & Summit",
+  "Mountain Meadow",
+  "Desert & Mesa",
+  "Canyon & Gorge",
+  "Forest",
+  "Lakeside & River",
+  "Coastal",
+  "Grassland & Plateau",
+];
+
+export const VIEW_OPENNESS_LABELS: Record<ViewOpenness, string> = {
+  "panoramic-360": "Panoramic 360°",
+  "open-vista": "Open Vista",
+  "partially-open": "Partially Open",
+  framed: "Framed by Trees",
+};
+
+export const VIEW_OPENNESS_ORDER: ViewOpenness[] = [
+  "panoramic-360",
+  "open-vista",
+  "partially-open",
+  "framed",
+];
+
+export const ACCESS_TYPE_LABELS: Record<AccessType, string> = {
+  sedan: "Sedan Accessible",
+  "high-clearance-4wd": "High-Clearance / 4WD",
+  "backpack-in": "Backpack-In Only",
+};

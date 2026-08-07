@@ -1,8 +1,9 @@
 "use client";
 
-import { Compass, MapPin, Mountain, ShieldCheck, Sun, X } from "lucide-react";
-import { HIGHLIGHT_TAG_LABELS } from "@/lib/types";
+import { Compass, Footprints, MapPin, Mountain, ShieldCheck, Sun, Telescope, X } from "lucide-react";
+import { ACCESS_TYPE_LABELS, HIGHLIGHT_TAG_LABELS, VIEW_OPENNESS_LABELS } from "@/lib/types";
 import type { CampingSpot } from "@/lib/types";
+import { SpotThumbnail } from "./SpotThumbnail";
 
 export function SpotDetail({ spot, onClose }: { spot: CampingSpot; onClose: () => void }) {
   const gmaps = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
@@ -10,6 +11,16 @@ export function SpotDetail({ spot, onClose }: { spot: CampingSpot; onClose: () =
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-stone-950">
+      <SpotThumbnail
+        lat={spot.lat}
+        lng={spot.lng}
+        alt={`Satellite view of ${spot.name}`}
+        width={760}
+        height={300}
+        spanMiles={1.8}
+        className="h-40 w-full shrink-0 object-cover"
+      />
+
       <div className="flex items-start justify-between border-b border-stone-800 p-4">
         <div>
           <h2 className="text-lg font-semibold text-stone-100">{spot.name}</h2>
@@ -49,7 +60,30 @@ export function SpotDetail({ spot, onClose }: { spot: CampingSpot; onClose: () =
             <Compass size={16} className="mt-0.5 shrink-0 text-stone-500" />
             <div>
               <dt className="text-xs text-stone-500">Access</dt>
-              <dd className="text-stone-200">{spot.access}</dd>
+              <dd className="text-stone-200">
+                {spot.access}
+                {spot.access_type === "backpack-in" && spot.hike_in_distance_mi
+                  ? ` (${spot.hike_in_distance_mi} mi hike-in)`
+                  : ""}
+              </dd>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Footprints size={16} className="mt-0.5 shrink-0 text-stone-500" />
+            <div>
+              <dt className="text-xs text-stone-500">Access type</dt>
+              <dd className="text-stone-200">{ACCESS_TYPE_LABELS[spot.access_type]}</dd>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Telescope size={16} className="mt-0.5 shrink-0 text-stone-500" />
+            <div>
+              <dt className="text-xs text-stone-500">Landscape &amp; view</dt>
+              <dd className="text-stone-200">
+                {spot.landscape} · {VIEW_OPENNESS_LABELS[spot.view_openness]}
+              </dd>
             </div>
           </div>
 

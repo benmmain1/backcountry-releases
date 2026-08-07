@@ -17,6 +17,19 @@ export const spotSchema = z.object({
   elevation_ft: z.number().nullable(),
   land_manager: z.string(),
   access: z.string(),
+  access_type: z.enum(["sedan", "high-clearance-4wd", "backpack-in"]),
+  hike_in_distance_mi: z.number().nullable(),
+  landscape: z.enum([
+    "Alpine & Summit",
+    "Mountain Meadow",
+    "Desert & Mesa",
+    "Canyon & Gorge",
+    "Forest",
+    "Lakeside & River",
+    "Coastal",
+    "Grassland & Plateau",
+  ]),
+  view_openness: z.enum(["panoramic-360", "open-vista", "partially-open", "framed"]),
   highlight_tags: z.array(
     z.enum([
       "alpine-lake",
@@ -35,6 +48,9 @@ export const spotSchema = z.object({
       "fall-colors",
       "slot-canyon",
       "mesa-view",
+      "meadow",
+      "glacier-view",
+      "big-peak-backdrop",
     ])
   ),
   description: z.string(),

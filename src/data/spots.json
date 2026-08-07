@@ -4,17 +4,25 @@
     "name": "Old Cascades Highway River Camp",
     "region": "Pacific Northwest",
     "state": "WA",
-    "lat": 47.7480,
-    "lng": -121.4550,
+    "lat": 47.748,
+    "lng": -121.455,
     "elevation_ft": 1050,
     "land_manager": "USFS - Mt. Baker-Snoqualmie National Forest",
     "access": "Pull-offs right off the paved Old Cascades Highway about 7 miles from Skykomish, just before the river bridge. Standard cars manage the main sites; high-clearance helps for pushing further down the spur.",
-    "highlight_tags": ["river-access", "forest-solitude", "waterfall"],
+    "highlight_tags": [
+      "river-access",
+      "forest-solitude",
+      "waterfall"
+    ],
     "description": "A shaded pocket of old-growth forest where a fast, clear river runs right past the tent pads, with a short waterfall trail branching off nearby. It's small and quiet rather than dramatic, the kind of spot that rewards campers who want the sound of moving water over a wide-open vista.",
     "best_season": "May - October",
     "permit_or_fee": "None required",
     "nearest_town": "Skykomish, WA - 7 miles",
-    "source_note": "Documented on The Dyrt's Skykomish, WA dispersed-camping guide and cross-referenced with Mt. Baker-Snoqualmie National Forest dispersed camping listings."
+    "source_note": "Documented on The Dyrt's Skykomish, WA dispersed-camping guide and cross-referenced with Mt. Baker-Snoqualmie National Forest dispersed camping listings.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Forest",
+    "view_openness": "framed"
   },
   {
     "id": "beckler-creek-dispersed-wa",
@@ -26,12 +34,19 @@
     "elevation_ft": 1250,
     "land_manager": "USFS - Mt. Baker-Snoqualmie National Forest",
     "access": "Unpaved Forest Service road (Beckler River Rd) roughly 7 miles from Skykomish; high-clearance recommended for the potholed sections beyond the first mile.",
-    "highlight_tags": ["river-access", "forest-solitude"],
+    "highlight_tags": [
+      "river-access",
+      "forest-solitude"
+    ],
     "description": "Multiple established pull-outs strung along Beckler Creek deep in Cascades timber, with at least one large flat site right at the water's edge. It's a low-key, deeply forested option for people who want a river soundtrack and total privacy rather than a big view.",
     "best_season": "May - October",
     "permit_or_fee": "None required",
     "nearest_town": "Skykomish, WA - 7 miles",
-    "source_note": "Documented on The Dyrt's Skykomish, WA dispersed-camping roundup."
+    "source_note": "Documented on The Dyrt's Skykomish, WA dispersed-camping roundup.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Forest",
+    "view_openness": "framed"
   },
   {
     "id": "keechelus-lake-dispersed-wa",
@@ -43,12 +58,20 @@
     "elevation_ft": 2500,
     "land_manager": "USFS - Okanogan-Wenatchee National Forest",
     "access": "Drive-up gravel access just off I-90 near Snoqualmie Pass; sedan accessible, though sites shrink or disappear when reservoir levels drop late season.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "sunset"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "sunset"
+    ],
     "description": "An easy-access reservoir camp with open sightlines across the water to the surrounding Cascade peaks, popular precisely because it's so close to the highway. Best in early-to-mid summer before the drawdown exposes mudflats.",
     "best_season": "June - August",
     "permit_or_fee": "Northwest Forest Pass may apply at some pullouts",
     "nearest_town": "Snoqualmie Pass, WA - 5 miles",
-    "source_note": "Referenced in The Dyrt's Washington dispersed-camping coverage of the Skykomish/I-90 corridor."
+    "source_note": "Referenced in The Dyrt's Washington dispersed-camping coverage of the Skykomish/I-90 corridor.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Lakeside & River",
+    "view_openness": "open-vista"
   },
   {
     "id": "baker-lake-dispersed-wa",
@@ -60,12 +83,20 @@
     "elevation_ft": 730,
     "land_manager": "USFS - Mt. Baker-Snoqualmie National Forest",
     "access": "Gravel Baker Lake Road (FR 11); most sites are passenger-car accessible, some tent-pad spurs benefit from higher clearance.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "forest-solitude"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "forest-solitude"
+    ],
     "description": "Free dispersed sites strung along the shore of Baker Lake with Mt. Baker's glaciated summit visible across the water on clear days. Several spots have decent tent pads and fire rings from repeated use, tucked into dense western Washington forest.",
     "best_season": "May - September",
     "permit_or_fee": "None required",
     "nearest_town": "Concrete, WA - 15 miles",
-    "source_note": "Documented on TuffStuff Overland's 'Best Free Dispersed Camping in Washington' guide."
+    "source_note": "Documented on TuffStuff Overland's 'Best Free Dispersed Camping in Washington' guide.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Lakeside & River",
+    "view_openness": "open-vista"
   },
   {
     "id": "salmon-la-sac-corridor-wa",
@@ -77,29 +108,45 @@
     "elevation_ft": 2700,
     "land_manager": "USFS - Okanogan-Wenatchee National Forest, Cle Elum Ranger District",
     "access": "Paved road from Cle Elum turns to good gravel near the campground; sedans reach the main corridor, high-clearance useful for spur roads toward Cooper Lake and Waptus trailheads.",
-    "highlight_tags": ["river-access", "mountain-view", "forest-solitude"],
+    "highlight_tags": [
+      "river-access",
+      "mountain-view",
+      "forest-solitude"
+    ],
     "description": "A popular weekend corridor out of Seattle where dispersed sites line the Cle Elum River with peaks of the Alpine Lakes Wilderness rising directly behind camp. Easy access makes it fill up fast on summer weekends, but it's a reliable option for river-and-mountain scenery within two hours of the city.",
     "best_season": "June - September",
     "permit_or_fee": "None required",
     "nearest_town": "Cle Elum, WA - 14 miles",
-    "source_note": "Mentioned across multiple Washington dispersed-camping guides (TuffStuff Overland, Outdoor Scott) as a well-known Okanogan-Wenatchee NF corridor."
+    "source_note": "Mentioned across multiple Washington dispersed-camping guides (TuffStuff Overland, Outdoor Scott) as a well-known Okanogan-Wenatchee NF corridor.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Lakeside & River",
+    "view_openness": "partially-open"
   },
   {
     "id": "fs-1514-three-sisters-view-or",
     "name": "FS Road 1514 Three Sisters Overlook",
     "region": "Pacific Northwest",
     "state": "OR",
-    "lat": 44.3100,
-    "lng": -121.6350,
+    "lat": 44.31,
+    "lng": -121.635,
     "elevation_ft": 6300,
     "land_manager": "USFS - Deschutes National Forest",
     "access": "Gravel forest road branching off the Three Creek Lake corridor south of Sisters; high-clearance recommended for the roughest stretches, short drive from pavement.",
-    "highlight_tags": ["mountain-view", "sunrise", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "mountain-view",
+      "sunrise",
+      "stargazing-dark-sky"
+    ],
     "description": "A camper-documented spur with unobstructed views of the Three Sisters volcanoes, quiet and easy enough to reach that it's become a known favorite among Central Oregon dispersed campers. High elevation and clear desert-edge air make for excellent stargazing after the mountain view fades at dusk.",
     "best_season": "July - October",
     "permit_or_fee": "None required",
     "nearest_town": "Sisters, OR - 12 miles",
-    "source_note": "A specific camper review of FS Road 1514 (via web search of Oregon dispersed camping forums) describes 'incredible mountain views, easy to access, quiet'; coordinates are approximate to the Three Creek Lake Road corridor it branches from."
+    "source_note": "A specific camper review of FS Road 1514 (via web search of Oregon dispersed camping forums) describes 'incredible mountain views, easy to access, quiet'; coordinates are approximate to the Three Creek Lake Road corridor it branches from.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "open-vista"
   },
   {
     "id": "alabama-hills-movie-road-ca",
@@ -111,29 +158,47 @@
     "elevation_ft": 5000,
     "land_manager": "BLM - Bishop Field Office",
     "access": "Paved Whitney Portal Road to gravel Movie Road; sedan accessible to most of the roughly 50 numbered designated dispersed sites. Free self-issue permit required per new BLM rules.",
-    "highlight_tags": ["mountain-view", "sunrise", "sunset", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "mountain-view",
+      "sunrise",
+      "sunset",
+      "stargazing-dark-sky"
+    ],
     "description": "Weathered orange boulders in the foreground and the sheer eastern escarpment of Mt. Whitney and the Sierra crest behind — this is one of the most photographed dispersed-camping backdrops in the country, and for good reason. Sunrise turns the granite spires alpenglow-pink while the highest peak in the Lower 48 catches first light.",
     "best_season": "March - May, September - November (very hot in summer)",
     "permit_or_fee": "Free self-issue BLM dispersed camping permit required, obtained at the kiosk or online",
     "nearest_town": "Lone Pine, CA - 3 miles",
-    "source_note": "Documented on BLM's official Alabama Hills recreation page and multiple Dyrt/Campendium dispersed listings."
+    "source_note": "Documented on BLM's official Alabama Hills recreation page and multiple Dyrt/Campendium dispersed listings.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "open-vista"
   },
   {
     "id": "buttermilk-country-ca",
     "name": "Buttermilk Country BLM Dispersed",
     "region": "California & Sierra Nevada",
     "state": "CA",
-    "lat": 37.3200,
-    "lng": -118.6350,
+    "lat": 37.32,
+    "lng": -118.635,
     "elevation_ft": 6500,
     "land_manager": "BLM - Bishop Field Office",
     "access": "Paved Highway 168 to gravel Buttermilk Road, sedan accessible to lower sites, higher clearance useful for spurs near the boulder fields.",
-    "highlight_tags": ["mountain-view", "sunset", "stargazing-dark-sky", "ridge-view"],
+    "highlight_tags": [
+      "mountain-view",
+      "sunset",
+      "stargazing-dark-sky",
+      "ridge-view"
+    ],
     "description": "Free BLM land at the literal base of the Sierra escarpment, scattered with world-famous granite boulders and framed by the jagged Wheeler Crest and Sierra peaks. Wind exposure is real but so is the payoff — a front-row seat to alpenglow on 13,000-foot summits with zero light pollution after dark.",
     "best_season": "April - October",
     "permit_or_fee": "None required",
     "nearest_town": "Bishop, CA - 8 miles",
-    "source_note": "Detailed on Spearhead Adventure Co.'s 'Epic BLM Campgrounds near Bishop' guide."
+    "source_note": "Detailed on Spearhead Adventure Co.'s 'Epic BLM Campgrounds near Bishop' guide.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "june-lake-mono-basin-overlook-ca",
@@ -145,12 +210,20 @@
     "elevation_ft": 7500,
     "land_manager": "USFS - Inyo National Forest",
     "access": "Gravel forest roads off Highway 120/395 near the June Lake Loop; high-clearance recommended, especially after rain.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "sunset"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "sunset"
+    ],
     "description": "A dispersed pull-off on Inyo National Forest land offering an expansive vantage over Mono Lake's tufa-studded shoreline and the volcanic Mono Craters, with the eastern Sierra wall rising behind camp. It's a favorite for photographers chasing sunset color over the lake.",
     "best_season": "May - October",
     "permit_or_fee": "None required (14-day stay limit)",
     "nearest_town": "June Lake, CA - 5 miles",
-    "source_note": "Cited in The Dyrt's Inyo National Forest dispersed-camping guide for the June Lake/Mono Lake area."
+    "source_note": "Cited in The Dyrt's Inyo National Forest dispersed-camping guide for the June Lake/Mono Lake area.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Lakeside & River",
+    "view_openness": "open-vista"
   },
   {
     "id": "chipmunk-flat-sonora-pass-ca",
@@ -162,12 +235,21 @@
     "elevation_ft": 8000,
     "land_manager": "USFS - Stanislaus National Forest",
     "access": "Pull-offs directly along paved Highway 108 a few miles up from Kennedy Meadows, with short gravel spurs; sedan accessible.",
-    "highlight_tags": ["mountain-view", "ridge-view", "stargazing-dark-sky", "wildflowers"],
+    "highlight_tags": [
+      "mountain-view",
+      "ridge-view",
+      "stargazing-dark-sky",
+      "wildflowers"
+    ],
     "description": "High on the west approach to 9,624-foot Sonora Pass, these roadside sites look out over granite ridgelines and volcanic remnants typical of the central Sierra crest. Cooler nights and thin air make for crisp stargazing, and the Pacific Crest Trail crosses nearby for an easy evening walk.",
     "best_season": "July - September (pass closes in winter)",
     "permit_or_fee": "None required",
     "nearest_town": "Kennedy Meadows (North), CA - 5 miles",
-    "source_note": "Named specifically as a popular Sonora Pass dispersed site on SonoraPassVacations.com's dispersed camping guide."
+    "source_note": "Named specifically as a popular Sonora Pass dispersed site on SonoraPassVacations.com's dispersed camping guide.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "open-vista"
   },
   {
     "id": "tioga-lake-dispersed-ca",
@@ -179,12 +261,20 @@
     "elevation_ft": 9700,
     "land_manager": "USFS - Inyo National Forest",
     "access": "Paved Highway 120 pull-offs just east of Yosemite's Tioga Pass entrance; sedan accessible.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "stargazing-dark-sky"
+    ],
     "description": "A high-alpine lake camp just outside Yosemite's eastern boundary, with granite peaks reflected in still water at nearly 10,000 feet. Being outside the park means no reservation system — just first-come dispersed sites with some of the best free scenery adjacent to Yosemite.",
     "best_season": "July - September",
     "permit_or_fee": "None required",
     "nearest_town": "Lee Vining, CA - 12 miles",
-    "source_note": "Referenced in multiple Eastern Sierra dispersed-camping guides describing Tioga Lake as a popular Inyo NF recreation and camping area near the pass."
+    "source_note": "Referenced in multiple Eastern Sierra dispersed-camping guides describing Tioga Lake as a popular Inyo NF recreation and camping area near the pass.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Lakeside & River",
+    "view_openness": "open-vista"
   },
   {
     "id": "panther-meadows-shasta-ca",
@@ -196,12 +286,21 @@
     "elevation_ft": 7420,
     "land_manager": "USFS - Shasta-Trinity National Forest",
     "access": "Paved Everitt Memorial Highway to the upper trailhead parking area; sedan accessible. Walk-in camping only, designated sites, no vehicles at the meadow itself.",
-    "highlight_tags": ["mountain-view", "sunrise", "wildflowers", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "mountain-view",
+      "sunrise",
+      "wildflowers",
+      "stargazing-dark-sky"
+    ],
     "description": "The highest drive-to camping area on Mount Shasta, perched at 7,420 feet with wildflower-strewn meadows and views south to Gray Butte, Lassen Peak, and the Sacramento River valley on clear days. A short walk from the parking area puts you in one of California's most striking alpine settings, considered sacred ground by local tribes.",
     "best_season": "July - September",
     "permit_or_fee": "None required for the walk-in dispersed area; wilderness permit needed only if continuing above treeline",
     "nearest_town": "Mount Shasta, CA - 14 miles",
-    "source_note": "Documented on the official USFS Shasta-Trinity National Forest Panther Meadows Campground page."
+    "source_note": "Documented on the official USFS Shasta-Trinity National Forest Panther Meadows Campground page.",
+    "access_type": "backpack-in",
+    "hike_in_distance_mi": 0.4,
+    "landscape": "Mountain Meadow",
+    "view_openness": "open-vista"
   },
   {
     "id": "mattole-lost-coast-ca",
@@ -213,12 +312,20 @@
     "elevation_ft": 50,
     "land_manager": "BLM - King Range National Conservation Area",
     "access": "Paved and then gravel road to the Mattole trailhead area; sedan accessible to the campground, short walk to the beach itself.",
-    "highlight_tags": ["coastal-view", "sunset", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "coastal-view",
+      "sunset",
+      "stargazing-dark-sky"
+    ],
     "description": "Black-sand beach camping at the mouth of the Mattole River, on California's rugged and famously undeveloped Lost Coast — one of the few stretches of Pacific coastline with no paved highway. Driftwood logs shelter tent sites from wind, and sunsets over open ocean with elephant seals hauled out nearby are the main draw.",
     "best_season": "May - October",
     "permit_or_fee": "Small BLM fee at Mattole Campground; wilderness permit required for Lost Coast Trail backpacking",
     "nearest_town": "Petrolia, CA - 5 miles",
-    "source_note": "Detailed on the BLM King Range NCA campgrounds and trails PDF and The Dyrt's King Range Conservation Area listing."
+    "source_note": "Detailed on the BLM King Range NCA campgrounds and trails PDF and The Dyrt's King Range Conservation Area listing.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Coastal",
+    "view_openness": "open-vista"
   },
   {
     "id": "muley-point-overlook-ut",
@@ -230,12 +337,22 @@
     "elevation_ft": 6100,
     "land_manager": "BLM - Monticello Field Office",
     "access": "Five-mile dirt and gravel road off SR-261 (accessed via the Moki Dugway if coming from the south); sedan accessible in dry weather, high-clearance recommended after rain.",
-    "highlight_tags": ["mesa-view", "desert-canyon", "sunset", "sunrise", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "mesa-view",
+      "desert-canyon",
+      "sunset",
+      "sunrise",
+      "stargazing-dark-sky"
+    ],
     "description": "One of the most jaw-dropping free viewpoints in the Southwest: a rim camp perched roughly 1,000 feet above the goosenecks of the San Juan River, with Monument Valley's buttes visible in the distance. No facilities, no fee, no crowds compared to the nearby national parks — just an enormous canyon-country panorama right outside your tent.",
     "best_season": "March - May, September - November",
     "permit_or_fee": "None required",
     "nearest_town": "Mexican Hat, UT - 25 miles",
-    "source_note": "Documented on VisitUtah.com's official Muley Point Overlook page and The Dyrt's Muley Point listing."
+    "source_note": "Documented on VisitUtah.com's official Muley Point Overlook page and The Dyrt's Muley Point listing.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "valley-of-the-gods-ut",
@@ -247,12 +364,21 @@
     "elevation_ft": 5100,
     "land_manager": "BLM - Monticello Field Office",
     "access": "17-mile dirt loop road off US-163; sedan passable in dry weather, high-clearance/4WD recommended and required when wet.",
-    "highlight_tags": ["desert-canyon", "mesa-view", "sunset", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "desert-canyon",
+      "mesa-view",
+      "sunset",
+      "stargazing-dark-sky"
+    ],
     "description": "A miniature, uncrowded Monument Valley — free-standing sandstone buttes and mesas rising out of open desert with no entrance station and no crowds. Campers pick their own unmarked spot along the loop, often with a single sandstone monolith framing the sunset entirely to themselves.",
     "best_season": "March - May, September - November",
     "permit_or_fee": "None required",
     "nearest_town": "Mexican Hat, UT - 7 miles",
-    "source_note": "Documented across multiple Dyrt and Campendium 'Valley of the Gods Dispersed Camping' listings."
+    "source_note": "Documented across multiple Dyrt and Campendium 'Valley of the Gods Dispersed Camping' listings.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "open-vista"
   },
   {
     "id": "wedge-overlook-san-rafael-swell-ut",
@@ -260,16 +386,25 @@
     "region": "Southwest Desert",
     "state": "UT",
     "lat": 38.7805,
-    "lng": -110.8430,
+    "lng": -110.843,
     "elevation_ft": 6700,
     "land_manager": "BLM - Price Field Office",
     "access": "20 miles of graded gravel road from Castle Dale; sedan accessible to the main overlook, high-clearance helpful for rim-side spurs.",
-    "highlight_tags": ["desert-canyon", "mesa-view", "stargazing-dark-sky", "sunrise"],
+    "highlight_tags": [
+      "desert-canyon",
+      "mesa-view",
+      "stargazing-dark-sky",
+      "sunrise"
+    ],
     "description": "Known locally as the 'Little Grand Canyon,' this BLM rim camp sits directly above a 1,000-foot gorge cut by the San Rafael River, with roughly 100 informal sites spread along three miles of canyon edge. Minimal light pollution and a huge open sky make it one of the best stargazing dispersed camps in central Utah.",
     "best_season": "April - June, September - October",
     "permit_or_fee": "None required",
     "nearest_town": "Castle Dale, UT - 20 miles",
-    "source_note": "Documented on the official BLM San Rafael Swell Recreation Area page and BlueRibbon Coalition's Wedge Overlook trail guide."
+    "source_note": "Documented on the official BLM San Rafael Swell Recreation Area page and BlueRibbon Coalition's Wedge Overlook trail guide.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "fisher-towers-castle-valley-ut",
@@ -277,16 +412,24 @@
     "region": "Southwest Desert",
     "state": "UT",
     "lat": 38.7254,
-    "lng": -109.3090,
+    "lng": -109.309,
     "elevation_ft": 4060,
     "land_manager": "BLM - Moab Field Office",
     "access": "Paved Highway 128 along the Colorado River, then a short gravel access road; sedan accessible.",
-    "highlight_tags": ["desert-canyon", "sunset", "mesa-view"],
+    "highlight_tags": [
+      "desert-canyon",
+      "sunset",
+      "mesa-view"
+    ],
     "description": "Camping beneath some of the tallest, strangest sandstone spires in the Southwest, with the Colorado River corridor, Castle Valley, and the distant La Sal Mountains all visible from the same spot. At sunset the towers glow deep crimson while the snow-streaked La Sals fade to pale blue in the distance.",
     "best_season": "March - May, September - November",
     "permit_or_fee": "None required for nearby BLM dispersed sites (the developed Fisher Towers campground itself charges a small fee)",
     "nearest_town": "Moab, UT - 21 miles",
-    "source_note": "Access and view details drawn from BLM's Fisher Towers National Recreation Trail listing and HikingMoab.com's BLM campground guide."
+    "source_note": "Access and view details drawn from BLM's Fisher Towers National Recreation Trail listing and HikingMoab.com's BLM campground guide.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "open-vista"
   },
   {
     "id": "tin-can-flats-hole-in-the-rock-ut",
@@ -298,12 +441,20 @@
     "elevation_ft": 5663,
     "land_manager": "BLM - Grand Staircase-Escalante National Monument",
     "access": "Hole-in-the-Rock Road, graded dirt for the first ~30 miles from Escalante, becoming rougher and requiring high clearance further out; sites near the Devils Garden turnoff are among the more accessible.",
-    "highlight_tags": ["desert-canyon", "stargazing-dark-sky", "sunset"],
+    "highlight_tags": [
+      "desert-canyon",
+      "stargazing-dark-sky",
+      "sunset"
+    ],
     "description": "A classic Grand Staircase-Escalante base camp along a legendary Mormon pioneer route, surrounded by slickrock domes and hoodoos with the sandstone arches of Devils Garden a short drive away. Remote enough that stargazing is exceptional, and there's an entire national monument of canyon hiking within reach of camp.",
     "best_season": "March - May, September - November",
     "permit_or_fee": "Free overnight permit required, available at Escalante visitor centers or trailhead kiosks",
     "nearest_town": "Escalante, UT - 15 miles",
-    "source_note": "Coordinates and access details for the Tin Can Flats dispersed area come from The Dyrt's Hole-in-the-Rock Road at Grand Staircase-Escalante listing."
+    "source_note": "Coordinates and access details for the Tin Can Flats dispersed area come from The Dyrt's Hole-in-the-Rock Road at Grand Staircase-Escalante listing.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "open-vista"
   },
   {
     "id": "gooseberry-mesa-ut",
@@ -315,12 +466,21 @@
     "elevation_ft": 5700,
     "land_manager": "BLM - Arizona Strip Field Office (St. George area)",
     "access": "Graded dirt and washboard road up onto the mesa top; sedan accessible in dry weather, high-clearance recommended for the full mesa loop.",
-    "highlight_tags": ["mesa-view", "desert-canyon", "mountain-view", "sunset"],
+    "highlight_tags": [
+      "mesa-view",
+      "desert-canyon",
+      "mountain-view",
+      "sunset"
+    ],
     "description": "A slickrock mesa top near Zion National Park with sweeping views across the Virgin River drainage toward Zion's peaks and the Pine Valley Mountains. Mountain bikers know it for the slickrock trail network, but the free camping on the rim is just as much the draw, with sunset light raking across red rock in every direction.",
     "best_season": "March - May, September - November",
     "permit_or_fee": "None required",
     "nearest_town": "Hurricane, UT - 15 miles",
-    "source_note": "Documented on Campendium's Gooseberry Mesa Dispersed Camping page."
+    "source_note": "Documented on Campendium's Gooseberry Mesa Dispersed Camping page.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "loy-butte-fr525-sedona-az",
@@ -332,12 +492,21 @@
     "elevation_ft": 4700,
     "land_manager": "USFS - Coconino National Forest, Red Rock Ranger District",
     "access": "Forest Road 525 off Highway 89A, with the Loy Butte spur branching off; main FR525 sites are sedan accessible, the Loy Butte spur benefits from higher clearance.",
-    "highlight_tags": ["desert-canyon", "sunset", "mesa-view", "mountain-view"],
+    "highlight_tags": [
+      "desert-canyon",
+      "sunset",
+      "mesa-view",
+      "mountain-view"
+    ],
     "description": "Open desert terrain south of Sedona with direct sightlines to the red rock formations the town is famous for, minus the crowds and fees of the developed viewpoints. The Loy Butte branch trades some of the main road's traffic for a quieter, more private pocket of the same red rock scenery.",
     "best_season": "October - April (avoid peak summer heat)",
     "permit_or_fee": "None required; 14-day stay limit within a 28-day period",
     "nearest_town": "Sedona, AZ - 8 miles",
-    "source_note": "Detailed in the Coconino National Forest dispersed camping rules and 'Let's See America' Sedona dispersed camping guide."
+    "source_note": "Detailed in the Coconino National Forest dispersed camping rules and 'Let's See America' Sedona dispersed camping guide.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "open-vista"
   },
   {
     "id": "schnebly-hill-road-sedona-az",
@@ -349,12 +518,21 @@
     "elevation_ft": 5000,
     "land_manager": "USFS - Coconino National Forest",
     "access": "Forest Road 153 (Schnebly Hill Road) climbs quickly out of Sedona; rocky and rutted, high-clearance 4WD required beyond the first mile or so.",
-    "highlight_tags": ["sunset", "sunrise", "desert-canyon", "mesa-view"],
+    "highlight_tags": [
+      "sunset",
+      "sunrise",
+      "desert-canyon",
+      "mesa-view"
+    ],
     "description": "The road climbs straight up out of the red rock valley to elevated pull-offs with panoramic views down over Sedona and out across Oak Creek Canyon. It's rough enough to filter out casual traffic, which means campers willing to bump up the road get some of the best sunrise and sunset vistas in the area to themselves.",
     "best_season": "October - April",
     "permit_or_fee": "None required",
     "nearest_town": "Sedona, AZ - 3 miles",
-    "source_note": "Described in Cruise America's and The Dyrt's Sedona-area dispersed camping guides."
+    "source_note": "Described in Cruise America's and The Dyrt's Sedona-area dispersed camping guides.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "white-pocket-vermilion-cliffs-az",
@@ -362,16 +540,25 @@
     "region": "Southwest Desert",
     "state": "AZ",
     "lat": 36.994201,
-    "lng": -111.601020,
+    "lng": -111.60102,
     "elevation_ft": 5100,
     "land_manager": "BLM - Vermilion Cliffs National Monument (Arizona Strip Field Office)",
     "access": "Deep sand and rocky 4x4 roads off House Rock Valley Road; high-clearance 4WD is mandatory, no cell service, self-sufficiency required.",
-    "highlight_tags": ["desert-canyon", "sunrise", "sunset", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "desert-canyon",
+      "sunrise",
+      "sunset",
+      "stargazing-dark-sky"
+    ],
     "description": "Swirled, brain-like sandstone formations in every direction, at a fraction of the crowd and permit hassle of nearby Coyote Buttes/The Wave. Because it requires real off-road driving to reach, campers who make it out are typically rewarded with total solitude among some of the strangest rock formations in the Southwest.",
     "best_season": "March - May, September - November",
     "permit_or_fee": "None required to camp (no permit needed for White Pocket itself, unlike the neighboring Wave permit)",
     "nearest_town": "Kanab, UT - 50 miles",
-    "source_note": "Access details confirmed via the official BLM White Pocket Trailhead page."
+    "source_note": "Access details confirmed via the official BLM White Pocket Trailhead page.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "lockett-meadow-kachina-peaks-az",
@@ -383,12 +570,21 @@
     "elevation_ft": 8544,
     "land_manager": "USFS - Coconino National Forest",
     "access": "Forest Road 552, a narrow one-way gravel switchback climb; high-clearance recommended, not suited to long trailers or RVs.",
-    "highlight_tags": ["fall-colors", "forest-solitude", "mountain-view", "wildflowers"],
+    "highlight_tags": [
+      "fall-colors",
+      "forest-solitude",
+      "mountain-view",
+      "wildflowers"
+    ],
     "description": "A high alpine meadow ringed by quaking aspen inside the volcanic caldera of the San Francisco Peaks, Arizona's tallest mountains. In late September the aspen stands turn gold almost overnight, making this one of the best — and coolest — fall-color camps in the desert Southwest.",
     "best_season": "May - October (peak fall color late September)",
     "permit_or_fee": "None required for nearby dispersed sites (developed campground has a small fee)",
     "nearest_town": "Flagstaff, AZ - 15 miles",
-    "source_note": "Documented on Arizona Highways' Lockett Meadow Campground page and the USFS wildflower/Inner Basin Trail page."
+    "source_note": "Documented on Arizona Highways' Lockett Meadow Campground page and the USFS wildflower/Inner Basin Trail page.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Mountain Meadow",
+    "view_openness": "partially-open"
   },
   {
     "id": "cosmic-campground-gila-nm",
@@ -400,12 +596,20 @@
     "elevation_ft": 5360,
     "land_manager": "USFS - Gila National Forest",
     "access": "Paved US-180 to a short, well-graded gravel spur; sedan accessible.",
-    "highlight_tags": ["stargazing-dark-sky", "forest-solitude", "sunset"],
+    "highlight_tags": [
+      "stargazing-dark-sky",
+      "forest-solitude",
+      "sunset"
+    ],
     "description": "The first International Dark Sky Sanctuary on U.S. Forest Service land, set in one of the most remote and rugged wilderness complexes in the country. No trees block the horizon, so the Milky Way is visible edge-to-edge on a clear moonless night — this is a spot built entirely around what happens after sunset.",
     "best_season": "April - October",
     "permit_or_fee": "None required",
     "nearest_town": "Alma, NM - 8 miles",
-    "source_note": "Documented on the official USFS Gila National Forest Cosmic Campground page and DarkSky International's site listing."
+    "source_note": "Documented on the official USFS Gila National Forest Cosmic Campground page and DarkSky International's site listing.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Grassland & Plateau",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "bisti-badlands-nm",
@@ -417,12 +621,21 @@
     "elevation_ft": 5700,
     "land_manager": "BLM - Farmington Field Office",
     "access": "Gravel Road 7297 off NM-371, about 36 miles south of Farmington; sedan accessible in dry conditions.",
-    "highlight_tags": ["desert-canyon", "stargazing-dark-sky", "sunset", "sunrise"],
+    "highlight_tags": [
+      "desert-canyon",
+      "stargazing-dark-sky",
+      "sunset",
+      "sunrise"
+    ],
     "description": "Otherworldly eroded badlands — hoodoos, petrified wood, and banded clay formations that look more like another planet than New Mexico. Camping right at the wilderness boundary means sunrise and sunset light hits the striped rock formations directly outside the tent, and there's essentially no light pollution for stargazing.",
     "best_season": "March - May, September - November",
     "permit_or_fee": "None required (14-day stay limit)",
     "nearest_town": "Farmington, NM - 36 miles",
-    "source_note": "Documented on the official BLM Bisti/De-Na-Zin Wilderness Area page."
+    "source_note": "Documented on the official BLM Bisti/De-Na-Zin Wilderness Area page.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Desert & Mesa",
+    "view_openness": "open-vista"
   },
   {
     "id": "alta-lakes-telluride-co",
@@ -434,12 +647,21 @@
     "elevation_ft": 11060,
     "land_manager": "USFS - Uncompahgre National Forest",
     "access": "Forest Road 632 (Alta Road) climbs about 4.3 miles from Highway 145; narrow and rough, high-clearance vehicle required.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "wildflowers", "sunrise"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "wildflowers",
+      "sunrise"
+    ],
     "description": "Roughly 20 free dispersed sites ring a pair of high alpine lakes at over 11,000 feet, surrounded by San Juan Mountains peaks and the ruins of the old Alta mining town. A handful of additional hike-in sites at Upper Alta Lake trade the short drive for even more solitude.",
     "best_season": "July - September",
     "permit_or_fee": "None required (7-day stay limit within a 30-day period)",
     "nearest_town": "Telluride, CO - 9 miles",
-    "source_note": "Documented on Campendium's Alta Lakes Designated Dispersed Campsites page and The Dyrt's Alta Lakes listing."
+    "source_note": "Documented on Campendium's Alta Lakes Designated Dispersed Campsites page and The Dyrt's Alta Lakes listing.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "lincoln-creek-road-aspen-co",
@@ -451,12 +673,20 @@
     "elevation_ft": 10500,
     "land_manager": "USFS - White River National Forest",
     "access": "Lincoln Creek Road off Highway 82 near Aspen; high-clearance required, 4WD recommended to reach the full 22 dispersed sites.",
-    "highlight_tags": ["mountain-view", "forest-solitude", "fall-colors"],
+    "highlight_tags": [
+      "mountain-view",
+      "forest-solitude",
+      "fall-colors"
+    ],
     "description": "Twenty-two dispersed sites climb a rugged valley road toward 12,000-foot ridgelines above Aspen, with the creek running beside camp most of the way. Aspen groves along the lower road turn brilliant gold in late September, making it one of the better fall-color drive-and-camp routes in the Elk Mountains.",
     "best_season": "June - September (fall colors late September)",
     "permit_or_fee": "None required",
     "nearest_town": "Aspen, CO - 12 miles",
-    "source_note": "Documented on Recreation.gov's Lincoln Creek Dispersed Campground listing (Points of Interest)."
+    "source_note": "Documented on Recreation.gov's Lincoln Creek Dispersed Campground listing (Points of Interest).",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "partially-open"
   },
   {
     "id": "kebler-pass-crested-butte-co",
@@ -468,12 +698,21 @@
     "elevation_ft": 9980,
     "land_manager": "USFS - Gunnison National Forest",
     "access": "County Road 12 (Kebler Pass Road), graded gravel over the pass between Crested Butte and Paonia; sedan accessible in good conditions.",
-    "highlight_tags": ["fall-colors", "mountain-view", "wildflowers", "forest-solitude"],
+    "highlight_tags": [
+      "fall-colors",
+      "mountain-view",
+      "wildflowers",
+      "forest-solitude"
+    ],
     "description": "Dispersed sites on both sides of the pass sit within the largest contiguous aspen grove in Colorado, a roughly 106-acre single organism known as the Pando clone. Late September through early October the entire drainage turns gold, arguably the single best fall-foliage dispersed-camping stretch in the state.",
     "best_season": "June - early October",
     "permit_or_fee": "None required; camping limited to designated sites in Gunnison County",
     "nearest_town": "Crested Butte, CO - 10 miles",
-    "source_note": "Documented in Uncover Colorado's Kebler Pass camping and fall-color guides."
+    "source_note": "Documented in Uncover Colorado's Kebler Pass camping and fall-color guides.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Forest",
+    "view_openness": "framed"
   },
   {
     "id": "guanella-pass-corridor-co",
@@ -485,12 +724,21 @@
     "elevation_ft": 10800,
     "land_manager": "USFS - Arapaho National Forest, Clear Creek Ranger District",
     "access": "Paved Guanella Pass Scenic Byway with designated dispersed pull-offs along Forest Roads 118E and 119; most sites are sedan accessible.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "wildflowers", "sunrise"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "wildflowers",
+      "sunrise"
+    ],
     "description": "Designated pullouts along a fully paved scenic byway put alpine tundra scenery and 14,000-foot Mount Bierstadt within a short walk of camp, with side roads leading to Silver Dollar and Murray Lakes for even more alpine-lake scenery. Wildflower blooms in July carpet the tundra meadows above treeline.",
     "best_season": "June - September",
     "permit_or_fee": "None required; camping restricted to signed designated sites",
     "nearest_town": "Georgetown, CO - 7 miles",
-    "source_note": "Documented on the official USFS Arapaho & Roosevelt National Forests Guanella Pass Scenic Byway recreation page."
+    "source_note": "Documented on the official USFS Arapaho & Roosevelt National Forests Guanella Pass Scenic Byway recreation page.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "open-vista"
   },
   {
     "id": "yankee-boy-sidney-basin-ouray-co",
@@ -502,12 +750,21 @@
     "elevation_ft": 11000,
     "land_manager": "USFS - Uncompahgre National Forest",
     "access": "Camp Bird Road (County Road 361) out of Ouray, then the Sidney Basin spur near Yankee Boy Basin; high-clearance 4WD required on the narrow shelf road.",
-    "highlight_tags": ["mountain-view", "waterfall", "wildflowers", "ridge-view"],
+    "highlight_tags": [
+      "mountain-view",
+      "waterfall",
+      "wildflowers",
+      "ridge-view"
+    ],
     "description": "Camping is no longer allowed directly in Yankee Boy Basin due to its popularity, but nearby Sidney Basin offers the same jaw-dropping cirque of 14,000-foot San Juan peaks — Mount Sneffels, Potosi, Teakettle — plus waterfalls and legendary July wildflower blooms, minus the day-trip traffic.",
     "best_season": "July - September",
     "permit_or_fee": "None required",
     "nearest_town": "Ouray, CO - 6 miles",
-    "source_note": "Access and camping-restriction details from americanadventurelab.com's Ouray/Telluride/Silverton trails guide and Fox in the Forest's Yankee Boy Basin guide."
+    "source_note": "Access and camping-restriction details from americanadventurelab.com's Ouray/Telluride/Silverton trails guide and Fox in the Forest's Yankee Boy Basin guide.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "shadow-mountain-teton-view-wy",
@@ -519,12 +776,21 @@
     "elevation_ft": 7500,
     "land_manager": "USFS - Bridger-Teton National Forest",
     "access": "Antelope Flats Road past Mormon Row to Shadow Mountain Road; gravel with potholes. Lower sites work for RVs up to ~30 feet; upper mountain sites require high clearance.",
-    "highlight_tags": ["mountain-view", "sunrise", "sunset", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "mountain-view",
+      "sunrise",
+      "sunset",
+      "stargazing-dark-sky"
+    ],
     "description": "Widely regarded as having the best free-camping view of the Teton Range in the country — the entire jagged skyline rises directly across Antelope Flats with nothing in between. The tradeoff for that view is popularity: sites at the numbered designated spots fill by mid-morning in summer.",
     "best_season": "June - September",
     "permit_or_fee": "None required; camping limited to numbered designated sites, 5-day stay limit",
     "nearest_town": "Kelly, WY - 5 miles",
-    "source_note": "Documented on The Dyrt's Shadow Mountain Dispersed Camping listing and multiple Jackson Hole free-camping guides describing it as possibly the best Teton view of any free campsite in the U.S."
+    "source_note": "Documented on The Dyrt's Shadow Mountain Dispersed Camping listing and multiple Jackson Hole free-camping guides describing it as possibly the best Teton view of any free campsite in the U.S.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Grassland & Plateau",
+    "view_openness": "open-vista"
   },
   {
     "id": "green-river-lakes-road-wy",
@@ -536,12 +802,21 @@
     "elevation_ft": 8040,
     "land_manager": "USFS - Bridger-Teton National Forest",
     "access": "Highway 352 then Forest Road 650, a dusty washboard dirt road running 17 miles from where pavement ends; sedan passable with caution.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "wildflowers", "forest-solitude"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "wildflowers",
+      "forest-solitude"
+    ],
     "description": "Dozens of informal dispersed sites line the road toward Green River Lakes on the northern edge of the Wind River Range, with the distinctive spire of 11,581-foot Square Top Mountain reflected in the lake at the road's end. It's a quieter, less-trafficked alternative to the crowded Tetons just over the divide.",
     "best_season": "June - September",
     "permit_or_fee": "None required",
     "nearest_town": "Pinedale, WY - 52 miles",
-    "source_note": "Documented on Campendium's Green River Lakes Dispersed Camping page and Visit Pinedale's destination guide."
+    "source_note": "Documented on Campendium's Green River Lakes Dispersed Camping page and Visit Pinedale's destination guide.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Lakeside & River",
+    "view_openness": "open-vista"
   },
   {
     "id": "beartooth-pass-fs2124-wy",
@@ -553,12 +828,21 @@
     "elevation_ft": 10900,
     "land_manager": "USFS - Shoshone National Forest",
     "access": "Short gravel spur (FS Road 2124) directly off the Beartooth Highway (US-212) near the Wyoming-Montana line; sedan accessible parking area.",
-    "highlight_tags": ["alpine-lake", "mountain-view", "ridge-view", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "alpine-lake",
+      "mountain-view",
+      "ridge-view",
+      "stargazing-dark-sky"
+    ],
     "description": "A short spur road that dead-ends in a gravel lot perched above snowfields and a glacial lake on the tundra-scoured Beartooth Plateau, one of the highest paved roads in the country. Above treeline at nearly 11,000 feet, the exposure is intense but so is the 360-degree alpine panorama.",
     "best_season": "Late June - mid-September (highway closes in winter)",
     "permit_or_fee": "None required",
     "nearest_town": "Cooke City, MT - 8 miles",
-    "source_note": "Described on MontanaHikes.com's Beartooth Highway camping guide as a short spur leading to a gravel lot overlooking snowfields and a glacial lake."
+    "source_note": "Described on MontanaHikes.com's Beartooth Highway camping guide as a short spur leading to a gravel lot overlooking snowfields and a glacial lake.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "pilot-creek-beartooth-mt",
@@ -570,12 +854,20 @@
     "elevation_ft": 7600,
     "land_manager": "USFS - Shoshone National Forest",
     "access": "Pull-offs directly along US-212 (Beartooth Highway) about 9 miles east of Cooke City; sedan accessible, vault toilet on site.",
-    "highlight_tags": ["mountain-view", "river-access", "forest-solitude"],
+    "highlight_tags": [
+      "mountain-view",
+      "river-access",
+      "forest-solitude"
+    ],
     "description": "A cluster of undeveloped riverside sites along the northeast approach to Yellowstone, with clear views of 11,708-foot Pilot Peak's distinctive spire rising above the valley. It's a convenient, no-fee overflow option for the busy Cooke City/Beartooth corridor.",
     "best_season": "June - September",
     "permit_or_fee": "None required",
     "nearest_town": "Cooke City, MT - 9 miles",
-    "source_note": "Documented on MontanaHikes.com's Beartooth Highway camping guide, which describes multiple undeveloped Pilot Creek sites with a vault toilet."
+    "source_note": "Documented on MontanaHikes.com's Beartooth Highway camping guide, which describes multiple undeveloped Pilot Creek sites with a vault toilet.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Lakeside & River",
+    "view_openness": "open-vista"
   },
   {
     "id": "steens-mountain-loop-or",
@@ -587,12 +879,22 @@
     "elevation_ft": 8000,
     "land_manager": "BLM - Burns District (Steens Mountain Cooperative Management and Protection Area)",
     "access": "Steens Mountain Loop Road, graded gravel at lower elevations becoming rough and high-clearance/4WD only near the summit; seasonal, typically open July-October.",
-    "highlight_tags": ["ridge-view", "desert-canyon", "sunrise", "sunset", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "ridge-view",
+      "desert-canyon",
+      "sunrise",
+      "sunset",
+      "stargazing-dark-sky"
+    ],
     "description": "A fault-block mountain rising a sheer mile above the Alvord Desert, with dispersed sites tucked into junipers just off the loop road offering huge views over glacially-carved gorges on one side and the shimmering white Alvord playa on the other. Remote enough, and dark enough, to be a serious stargazing destination as well.",
     "best_season": "July - September",
     "permit_or_fee": "None required",
     "nearest_town": "Frenchglen, OR - 15 miles",
-    "source_note": "Documented on The Dyrt's Steens Mountain Loop Road Dispersed Campsite listing and the Oregon Natural Desert Association's Steens Mountain visitor guide."
+    "source_note": "Documented on The Dyrt's Steens Mountain Loop Road Dispersed Campsite listing and the Oregon Natural Desert Association's Steens Mountain visitor guide.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Alpine & Summit",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "massacre-rim-dark-sky-nv",
@@ -604,12 +906,19 @@
     "elevation_ft": 6500,
     "land_manager": "BLM - Black Rock Field Office",
     "access": "Remote unmaintained dirt roads north of Gerlach; high-clearance 4WD required, extremely remote with no cell service or nearby services.",
-    "highlight_tags": ["stargazing-dark-sky", "desert-canyon"],
+    "highlight_tags": [
+      "stargazing-dark-sky",
+      "desert-canyon"
+    ],
     "description": "One of the darkest measured places on Earth, designated an International Dark Sky Sanctuary specifically for its near-total absence of light pollution. This is about as remote as dispersed camping gets in the Lower 48 — sagebrush basin-and-range country where the Milky Way casts a visible shadow on clear nights.",
     "best_season": "May - October",
     "permit_or_fee": "None required",
     "nearest_town": "Gerlach, NV - 50 miles",
-    "source_note": "Documented on the official BLM Massacre Rim Dark Sky Sanctuary page."
+    "source_note": "Documented on the official BLM Massacre Rim Dark Sky Sanctuary page.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Grassland & Plateau",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "lamoille-canyon-ruby-mountains-nv",
@@ -621,12 +930,21 @@
     "elevation_ft": 7500,
     "land_manager": "USFS - Humboldt-Toiyabe National Forest",
     "access": "Forest Road 660, paved at the mouth of the canyon transitioning to gravel; sedan accessible to most dispersed pullouts before the developed campground.",
-    "highlight_tags": ["mountain-view", "waterfall", "alpine-lake", "fall-colors"],
+    "highlight_tags": [
+      "mountain-view",
+      "waterfall",
+      "alpine-lake",
+      "fall-colors"
+    ],
     "description": "Often called the 'Yosemite of Nevada,' this glacially-carved canyon cuts deep into the Ruby Mountains with sheer granite walls, waterfalls, and access to alpine lakes higher up the range. It's a surprising and little-known alternative to the Sierra for anyone driving the Great Basin's Highway 50 corridor.",
     "best_season": "June - September",
     "permit_or_fee": "None required",
     "nearest_town": "Lamoille, NV - 5 miles",
-    "source_note": "Documented on The Dyrt's Camp Lamoille-Dispersed Camping listing describing sites along Forest Service Road 660."
+    "source_note": "Documented on The Dyrt's Camp Lamoille-Dispersed Camping listing describing sites along Forest Service Road 660.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Canyon & Gorge",
+    "view_openness": "open-vista"
   },
   {
     "id": "sacramento-pass-great-basin-nv",
@@ -638,12 +956,20 @@
     "elevation_ft": 7150,
     "land_manager": "BLM - Ely District",
     "access": "Paved Highway 6/50 to a gravel BLM access road; sedan accessible.",
-    "highlight_tags": ["stargazing-dark-sky", "mountain-view", "sunrise"],
+    "highlight_tags": [
+      "stargazing-dark-sky",
+      "mountain-view",
+      "sunrise"
+    ],
     "description": "A reliable overflow option about 8 miles from Great Basin National Park, sitting in open sagebrush country with views toward Wheeler Peak's 13,000-foot summit and some of the same International Dark Sky-certified night skies the park is known for, minus the reservations.",
     "best_season": "May - October",
     "permit_or_fee": "None required",
     "nearest_town": "Baker, NV - 8 miles",
-    "source_note": "Documented in a BLM-published PDF, 'Dispersed Camping On BLM Near Great Basin National Park.'"
+    "source_note": "Documented in a BLM-published PDF, 'Dispersed Camping On BLM Near Great Basin National Park.'",
+    "access_type": "sedan",
+    "hike_in_distance_mi": null,
+    "landscape": "Grassland & Plateau",
+    "view_openness": "open-vista"
   },
   {
     "id": "grassy-ridge-bald-nc",
@@ -655,12 +981,22 @@
     "elevation_ft": 6184,
     "land_manager": "USFS - Pisgah National Forest (Roan Highlands)",
     "access": "1.5-2 mile hike from the Carvers Gap trailhead along the Appalachian Trail; no vehicle access, backpack in.",
-    "highlight_tags": ["ridge-view", "wildflowers", "sunrise", "sunset", "stargazing-dark-sky"],
+    "highlight_tags": [
+      "ridge-view",
+      "wildflowers",
+      "sunrise",
+      "sunset",
+      "stargazing-dark-sky"
+    ],
     "description": "One of the highest and most expansive of the Southern Appalachians' rare grassy balds, with 360-degree views along the North Carolina-Tennessee state line and no forest canopy to block sunrise, sunset, or stars. Native rhododendron and azalea blooms color the bald in June, and the site along the AT has reliable water nearby.",
     "best_season": "May - October",
     "permit_or_fee": "None required",
     "nearest_town": "Bakersville, NC - 14 miles",
-    "source_note": "Documented on The Dyrt's Grassy Ridge Bald - Dispersed BackCountry Camping listing."
+    "source_note": "Documented on The Dyrt's Grassy Ridge Bald - Dispersed BackCountry Camping listing.",
+    "access_type": "backpack-in",
+    "hike_in_distance_mi": 1.75,
+    "landscape": "Alpine & Summit",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "linville-gorge-kistler-nc",
@@ -672,12 +1008,21 @@
     "elevation_ft": 3400,
     "land_manager": "USFS - Pisgah National Forest, Grandfather Ranger District",
     "access": "Kistler Memorial Highway (NC 1238), a rough dirt and gravel road climbing along the gorge rim; high-clearance recommended, some pull-offs manageable by sedan.",
-    "highlight_tags": ["ridge-view", "waterfall", "forest-solitude", "sunset"],
+    "highlight_tags": [
+      "ridge-view",
+      "waterfall",
+      "forest-solitude",
+      "sunset"
+    ],
     "description": "Dispersed pull-offs directly on the western rim of one of the deepest and wildest gorges in the eastern U.S., with clear sightlines across the canyon to Shortoff Mountain and Table Rock. Linville Falls is a short drive away, and the gorge itself remains one of the few truly rugged wilderness areas left in the Southeast.",
     "best_season": "April - November",
     "permit_or_fee": "None required most of the year; permit required for the wilderness on weekends/holidays May-October",
     "nearest_town": "Linville Falls, NC - 6 miles",
-    "source_note": "Coordinates and access details sourced from The Dyrt's Linville Gorge Wilderness Dispersed Camping listing."
+    "source_note": "Coordinates and access details sourced from The Dyrt's Linville Gorge Wilderness Dispersed Camping listing.",
+    "access_type": "high-clearance-4wd",
+    "hike_in_distance_mi": null,
+    "landscape": "Canyon & Gorge",
+    "view_openness": "open-vista"
   },
   {
     "id": "max-patch-corridor-nc",
@@ -689,28 +1034,47 @@
     "elevation_ft": 4600,
     "land_manager": "USFS - Pisgah National Forest",
     "access": "Gravel forest road to a small trailhead parking area off NC-1182; short walk to camp just below treeline along the Appalachian Trail. Camping on the bald summit itself is prohibited.",
-    "highlight_tags": ["ridge-view", "sunrise", "sunset", "stargazing-dark-sky", "wildflowers"],
+    "highlight_tags": [
+      "ridge-view",
+      "sunrise",
+      "sunset",
+      "stargazing-dark-sky",
+      "wildflowers"
+    ],
     "description": "Max Patch's grassy summit delivers a 360-degree view of the Great Smoky Mountains, the Balsams, and the Black Mountains, and is one of the most famous sunset spots on the entire Appalachian Trail. Camping isn't allowed on the bald itself, but sites just below treeline along the AT put that view within a short walk of the tent.",
     "best_season": "May - October",
     "permit_or_fee": "None required (14-day stay limit)",
     "nearest_town": "Hot Springs, NC - 10 miles",
-    "source_note": "Access and camping-rule details from the Max Patch Wikipedia entry and an Overland Bound community forum thread on camping near Max Patch."
+    "source_note": "Access and camping-rule details from the Max Patch Wikipedia entry and an Overland Bound community forum thread on camping near Max Patch.",
+    "access_type": "backpack-in",
+    "hike_in_distance_mi": 0.6,
+    "landscape": "Alpine & Summit",
+    "view_openness": "panoramic-360"
   },
   {
     "id": "hooper-bald-cherohala-nc",
     "name": "Hooper Bald, Cherohala Skyway",
     "region": "Appalachians & Southeast",
     "state": "NC",
-    "lat": 35.3600,
-    "lng": -83.8970,
+    "lat": 35.36,
+    "lng": -83.897,
     "elevation_ft": 5400,
     "land_manager": "USFS - Nantahala National Forest",
     "access": "Short gravel spur and walk-in from a pull-off along the paved Cherohala Skyway (NC-143); sedan accessible to the trailhead.",
-    "highlight_tags": ["ridge-view", "mountain-view", "fall-colors", "sunset"],
+    "highlight_tags": [
+      "ridge-view",
+      "mountain-view",
+      "fall-colors",
+      "sunset"
+    ],
     "description": "A high grassy bald just off one of the most scenic paved drives in the Southern Appalachians, with long views across the Nantahala and Cherokee National Forests toward the Great Smoky Mountains. Fall color along the 43-mile skyway corridor peaks in mid-October, turning the ridgelines around camp red and gold.",
     "best_season": "May - October (fall color mid-October)",
     "permit_or_fee": "None required",
     "nearest_town": "Robbinsville, NC - 18 miles",
-    "source_note": "Location referenced via Cherohala Skyway overlook guides (Overlook Maps, Great Smokies visitor guide); exact camp coordinates are approximate to the Hooper Bald / Santeetlah Overlook area of the byway."
+    "source_note": "Location referenced via Cherohala Skyway overlook guides (Overlook Maps, Great Smokies visitor guide); exact camp coordinates are approximate to the Hooper Bald / Santeetlah Overlook area of the byway.",
+    "access_type": "sedan",
+    "hike_in_distance_mi": 0.3,
+    "landscape": "Alpine & Summit",
+    "view_openness": "open-vista"
   }
 ]
