@@ -1,3 +1,18 @@
+<!--
+  Backcountry — web deployment.
+
+  Versioned in the repo at site/index.html; published to the R2 bucket root
+  (https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/) by site/publish.py.
+
+  style.json is NOT hand-maintained here — it is generated from
+  app/src/map/style.ts (the same style module the Android app builds against)
+  by site/build_style.ts, so this page can never silently drift from what the
+  phone renders:
+
+    node --experimental-strip-types site/build_style.ts > site/style.json
+
+  See site/publish.py for how both files get uploaded.
+-->
 <!doctype html>
 <html lang="en">
 <head>
@@ -115,6 +130,7 @@
   #layers-body .swatch.line { border-radius: 2px; height: 4px; align-self: center; }
   #layers-body .label { font-size: 14px; flex: 1; }
   #layers-body .note { font-size: 12px; color: var(--muted); margin: -2px 0 8px; }
+  #layers-body .group-note { font-size: 12px; color: var(--muted); margin: -2px 0 6px; font-style: italic; }
 
   /* ---- Regions list: jump straight to a region, no hunting on the map ---- */
   #regions-body .region-row {
@@ -146,6 +162,49 @@
   .region-pin.hidden { opacity: 0 !important; pointer-events: none; }
   .region-pin .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
 
+  /* ---- Info card: tap a trail or rec site to see details ---- */
+  #info-sheet .info-head { display: flex; align-items: center; gap: 12px; }
+  #info-sheet .info-head-text { flex: 1; min-width: 0; }
+  #info-icon {
+    flex: none; width: 46px; height: 46px; border-radius: 13px; color: #fff;
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  }
+  #info-icon:empty { display: none; }
+  #info-sheet .info-kicker { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: 700; color: var(--accent); margin: 2px 0 3px; }
+  #info-sheet h1 { margin: 0; }
+  #info-close {
+    flex: none; width: 28px; height: 28px; border: none; background: var(--border);
+    border-radius: 50%; cursor: pointer; color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .info-gallery {
+    display: flex; gap: 8px; overflow-x: auto; margin: 2px -18px 10px; padding: 0 18px;
+    scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+  }
+  .info-gallery:empty { display: none; }
+  .info-gallery a { flex: none; scroll-snap-align: start; border-radius: 10px; overflow: hidden; display: block; }
+  .info-gallery img { display: block; height: 140px; width: auto; max-width: 220px; object-fit: cover; background: var(--border); }
+  .info-gallery-attrib { font-size: 10.5px; color: var(--muted); margin: -6px 0 12px; }
+  .info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+  .info-badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--border); white-space: nowrap; }
+  .info-badge.status-open { background: rgba(63,125,84,.16); color: var(--accent); }
+  .info-badge.status-closed { background: rgba(200,40,30,.14); color: #c8281e; }
+  .info-facts { display: flex; flex-direction: column; }
+  .info-facts .fact-row {
+    display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px;
+    padding: 7px 0; border-top: 1px solid var(--border);
+  }
+  .info-facts .fact-row:first-child { border-top: none; }
+  .info-facts .fact-label { color: var(--muted); flex: none; }
+  .info-facts .fact-value { font-weight: 600; text-align: right; }
+  .info-desc { white-space: pre-line; }
+  #info-sheet .info-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; margin: 14px 0 4px; }
+  .info-link {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+    padding: 9px 15px; background: var(--border); color: var(--text);
+    text-decoration: none; font-weight: 700; font-size: 13.5px; border-radius: 999px;
+  }
+
   #status {
     position: absolute; bottom: 12px; left: 12px; z-index: 2;
     background: rgba(0,0,0,.72); color: #fff; padding: 6px 10px;
@@ -153,6 +212,8 @@
     transition: opacity .3s; pointer-events: none;
   }
   #status.hidden { opacity: 0; }
+  #status.warn { background: rgba(20,22,18,.9); pointer-events: auto; opacity: 1 !important; }
+  #status.warn .dot { background: #e0b073; }
   #status.error { background: #8a1f16; pointer-events: auto; opacity: 1 !important; }
   #status .dot { width: 6px; height: 6px; border-radius: 50%; background: #6fbf8a; flex: none; }
 
@@ -210,6 +271,21 @@
     <div id="regions-body"></div>
   </div>
 
+  <div id="info-sheet" class="sheet">
+    <div class="grabber"></div>
+    <div class="info-head">
+      <div id="info-icon"></div>
+      <div class="info-head-text">
+        <div class="info-kicker" id="info-kicker"></div>
+        <h1 id="info-title"></h1>
+      </div>
+      <button id="info-close" type="button" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div id="info-body"></div>
+  </div>
+
   <div id="status"><span class="dot"></span><span id="status-text">Loading map…</span></div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -217,11 +293,19 @@
   <script>
     const statusEl = document.getElementById('status');
     const statusText = document.getElementById('status-text');
-    const say = (text, isError) => {
+    // 'info' auto-hides after a moment (the normal case: "loaded", "found
+    // it"). 'warn' and 'error' both persist until something else calls
+    // say() again — 'warn' is for "still working, nothing is actually
+    // wrong yet" (a big archive taking a while over a slow connection),
+    // 'error' is for "this did fail". Collapsing that distinction into a
+    // single isError boolean, as an earlier version of this function did,
+    // meant a slow-but-fine load and an outright failure looked identical.
+    const say = (text, level = 'info') => {
       statusText.textContent = text;
-      statusEl.classList.toggle('error', Boolean(isError));
+      statusEl.classList.toggle('warn', level === 'warn');
+      statusEl.classList.toggle('error', level === 'error');
       statusEl.classList.remove('hidden');
-      if (!isError) setTimeout(() => statusEl.classList.add('hidden'), 2200);
+      if (level === 'info') setTimeout(() => statusEl.classList.add('hidden'), 2200);
     };
 
     const menuBtn = document.getElementById('menu-btn');
@@ -232,6 +316,8 @@
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
     const regionsSheet = document.getElementById('regions-sheet');
+    const infoSheet = document.getElementById('info-sheet');
+    const infoCloseBtn = document.getElementById('info-close');
     const scrim = document.getElementById('scrim');
     const regionLabel = document.getElementById('region-label');
 
@@ -241,6 +327,7 @@
       layersBtn.classList.remove('active');
       regionsSheet.classList.remove('open');
       regionsBtn.classList.remove('active');
+      infoSheet.classList.remove('open');
       scrim.classList.remove('open');
     }
     function toggleSheet(sheet, btn) {
@@ -256,6 +343,7 @@
     titlePill.onclick = () => toggleSheet(aboutSheet, menuBtn);
     layersBtn.onclick = () => toggleSheet(layersSheet, layersBtn);
     regionsBtn.onclick = () => toggleSheet(regionsSheet, regionsBtn);
+    infoCloseBtn.onclick = closeSheets;
     scrim.onclick = closeSheets;
 
     // Plain-language layer groups. Colors here double as the legend —
@@ -302,6 +390,21 @@
         title: 'Camping & Recreation',
         items: [
           { id: 'developed-rec', label: 'Campgrounds & Rec Sites', color: '#ff9a52' },
+          // A real "spots" source-layer doesn't exist yet — a separate
+          // discovery pipeline is generating it for a pilot area — so this
+          // stays honest about that instead of a dead/missing row: the
+          // toggle is real (it lights up the moment data exists, no code
+          // change needed) but note() below explains why it does nothing
+          // today rather than pretending the feature is finished.
+          {
+            id: 'spots', label: 'Camp Spots', color: '#1e7a4a',
+            note: (manifest) => {
+              const count = manifest?.spot_count ?? 0;
+              return count > 0
+                ? `${count.toLocaleString()} candidate spots indexed so far.`
+                : 'Not yet available for most of Utah — spot discovery is still in progress.';
+            },
+          },
         ],
       },
     ];
@@ -342,18 +445,371 @@
       };
 
       map.on('error', (event) => {
-        say(`Map error: ${event.error?.message ?? 'unknown'}`, true);
+        say(`Map error: ${event.error?.message ?? 'unknown'}`, 'error');
         console.error(event.error);
       });
+
+      // The vector archive is 500MB+ and the terrain archive 1.7GB+, both
+      // read over plain HTTP range requests — on a slow connection the first
+      // tiles can take a while to arrive, and a stalled or dropped range
+      // request doesn't always surface as a MapLibre 'error' event, so
+      // "map never loads" can otherwise look identical to "map is broken"
+      // with nothing in the UI to tell them apart. These two timers turn
+      // silence into an honest status update instead.
+      let loaded = false;
+      map.once('load', () => { loaded = true; });
+      setTimeout(() => {
+        if (!loaded) say('Still loading — the map data is 500MB+, this can take a while on a slow connection', 'warn');
+      }, 9000);
+      setTimeout(() => {
+        if (!loaded) say('This is taking much longer than expected — check your connection, or try reloading', 'error');
+      }, 40000);
 
       map.on('load', async () => {
         regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
-        buildLayerPanel(map, style);
+        buildLayerPanel(map, style, manifest);
+        setupInfoClicks(map, style);
 
         const regions = await loadAvailableRegions(manifest);
         addRegionCoverage(map, regions);
         buildRegionsPanel(map, regions);
+      });
+    }
+
+    // ---- Tap a trail or rec site to see its details ----
+
+    const TRAIL_CLASS_NAMES = {
+      1: 'Minimal / Undeveloped',
+      2: 'Simple / Minor Development',
+      3: 'Developed / Improved',
+      4: 'Highly Developed',
+      5: 'Fully Developed',
+    };
+    const TRAIL_TYPE_NAMES = { TERRA: 'Land Trail', SNOW: 'Snow Trail', WATER: 'Water Trail' };
+
+    // The USFS/BLM data has no real site photography (the "markertype"
+    // field points at a defunct fs.usda.gov image path), so cards get a
+    // representative icon instead of a broken <img>. These SVGs are
+    // authored here, not derived from tile data, so setting them via
+    // innerHTML is safe.
+    const ICON_SVG = {
+      tent: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 12 4l9 16H3Z"/><path d="M12 4v16"/></svg>',
+      table: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M5 9v11M19 9v11M3 15h18"/></svg>',
+      trail: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20c4-2 4-6 8-8s4-6 8-8" stroke-dasharray="2.5 3"/><circle cx="4" cy="20" r="1.3" fill="currentColor" stroke="none"/><circle cx="20" cy="4" r="1.3" fill="currentColor" stroke="none"/></svg>',
+      fish: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c4-5 13-5 17 0-4 5-13 5-17 0Z"/><circle cx="14" cy="12" r=".8" fill="currentColor" stroke="none"/><path d="M19 12l3-3.5v7L19 12Z"/></svg>',
+      wave: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 10c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></svg>',
+      ohv: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/><path d="M7 17h6l4-8h3M11 17 14 9"/></svg>',
+      pin: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-7.5 7-12a7 7 0 1 0-14 0c0 4.5 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+      mountain: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 9 8l4 6.5 2-3L21 20H3Z"/></svg>',
+    };
+    const ACTIVITY_STYLES = {
+      'Camping & Cabins': { color: '#ff9a52', icon: ICON_SVG.tent },
+      'Picnicking': { color: '#4f9d68', icon: ICON_SVG.table },
+      'Hiking': { color: '#c99a5b', icon: ICON_SVG.trail },
+      'Trailhead': { color: '#c99a5b', icon: ICON_SVG.trail },
+      'Fishing': { color: '#5fa8dd', icon: ICON_SVG.fish },
+      'Water Activities': { color: '#5fa8dd', icon: ICON_SVG.wave },
+      'OHV Riding & Camping': { color: '#e0763f', icon: ICON_SVG.ohv },
+    };
+    const DEFAULT_ACTIVITY_STYLE = { color: '#8a8f83', icon: ICON_SVG.pin };
+    const TRAIL_STYLE = { color: '#6b8f5a', icon: ICON_SVG.mountain };
+
+    function setInfoIcon(style) {
+      const el = document.getElementById('info-icon');
+      el.style.background = style.color;
+      el.innerHTML = style.icon;
+    }
+
+    // Vector tile properties come from third-party USFS/BLM datasets, so
+    // never trust them into innerHTML — this route (assign to a detached
+    // element's innerHTML, then read back only .textContent) strips any
+    // markup instead of rendering it, and nothing here ever touches the
+    // live DOM.
+    const htmlScrubber = document.createElement('div');
+    function stripHtml(value) {
+      if (!value) return '';
+      htmlScrubber.innerHTML = value;
+      htmlScrubber.querySelectorAll('script, style').forEach((el) => el.remove());
+      return htmlScrubber.textContent.replace(/\s+/g, ' ').trim();
+    }
+    function titleCase(value) {
+      if (!value) return '';
+      return value.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    function factRow(label, value) {
+      if (!value) return null;
+      const row = document.createElement('div');
+      row.className = 'fact-row';
+      const l = document.createElement('span');
+      l.className = 'fact-label';
+      l.textContent = label;
+      const v = document.createElement('span');
+      v.className = 'fact-value';
+      v.textContent = value;
+      row.append(l, v);
+      return row;
+    }
+
+    function badge(text, extraClass) {
+      const el = document.createElement('span');
+      el.className = 'info-badge' + (extraClass ? ` ${extraClass}` : '');
+      el.textContent = text;
+      return el;
+    }
+
+    function paragraph(text, extraClass) {
+      const p = document.createElement('p');
+      if (extraClass) p.className = extraClass;
+      p.textContent = text;
+      return p;
+    }
+
+    function sectionTitle(text) {
+      const h = document.createElement('div');
+      h.className = 'info-section-title';
+      h.textContent = text;
+      return h;
+    }
+
+    function externalLink(url, label) {
+      if (!url || !/^https:\/\//i.test(url)) return null;
+      const a = document.createElement('a');
+      a.className = 'info-link';
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = label;
+      return a;
+    }
+
+    // The USFS/BLM tile data has no site photography (see the dead
+    // "markertype" image path noted above), so real pictures come from
+    // Wikimedia Commons' free geosearch API instead — real photos taken
+    // near this exact coordinate, keyless and CORS-enabled for browser
+    // use. Best-effort: outdoor rec sites often have nothing nearby, in
+    // which case the gallery just doesn't appear.
+    const photoCache = new Map();
+    async function fetchCommonsPhotos([lng, lat], limit = 4) {
+      const cacheKey = `${lng.toFixed(4)},${lat.toFixed(4)}`;
+      if (photoCache.has(cacheKey)) return photoCache.get(cacheKey);
+
+      const result = await (async () => {
+        // geosearch already sorts by distance from the coordinate, so one
+        // moderately generous radius with a bigger candidate pool
+        // naturally prefers the closest usable photos — an earlier,
+        // tighter-radius/smaller-pool version stopped as soon as it found
+        // *any* single valid match (often a mediocre one), crowding out
+        // much better photos that were still nearby but past the cutoff.
+        // Only widen further if the area truly has nothing at all.
+        for (const radiusMeters of [5000, 15000]) {
+          const url = 'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+            action: 'query', generator: 'geosearch',
+            ggscoord: `${lat}|${lng}`, ggsradius: String(radiusMeters), ggslimit: '40', ggsnamespace: '6',
+            prop: 'imageinfo', iiprop: 'url|extmetadata|mime|size', iiurlwidth: '480',
+            format: 'json', origin: '*',
+          });
+          try {
+            const data = await fetch(url).then((r) => r.json());
+            const pages = Object.values(data?.query?.pages || {});
+            const photos = pages
+              .filter((p) => p.imageinfo?.[0])
+              .map((p) => ({ title: p.title, info: p.imageinfo[0] }))
+              .filter(({ info }) => info.mime === 'image/jpeg' || info.mime === 'image/png')
+              .filter(({ title, info }) => {
+                const categories = info.extmetadata?.Categories?.value || '';
+                // iNaturalist/GBIF entries are single-species ID photos
+                // (a mushroom cap, one wildflower, a bug) uploaded for
+                // species records, not pictures of the place — geotagged
+                // precisely, so they otherwise pass every other filter.
+                if (/iNaturalist|\bGBIF\b/i.test(categories)) return false;
+                const haystack = `${title} ${categories}`;
+                // Geotagged astronaut photography (titled "ISS014-E-11963
+                // - View of Utah", "ISS054-E-42045 - View of Earth", etc.)
+                // and other non-scenic or specimen-macro subjects that
+                // show up in geosearch near almost any coordinate without
+                // being a picture of this place. Note: titles come back as
+                // "File:XXX.jpg", so ISS### must not be anchored to ^.
+                return !/\bISS\d{3}-E-\d+\b|Satellite (pictures?|images?) of|logo|icon|flag|diagram|chart|\bmap\b|signage|sign\.jpg|Landsat|Sentinel-\d|\bMODIS\b|\bASTER\b|Earth Observatory|fung(i|us)|mushroom|lichen|\bmoss\b|insect|arthropod|spider|beetle|larva|caterpillar|close-?up|macro photography|specimen|hoar frost|frost crystal|snowflake|flood damage|fire damage|storm damage|burn scar|wildfire|road damage|construction|\binterstate\b|freeway|\binversion\b|traffic jam/i.test(haystack);
+              })
+              .map(({ info }) => ({
+                thumbUrl: info.thumburl,
+                pageUrl: info.descriptionurl,
+                author: stripHtml(info.extmetadata?.Artist?.value) || 'Wikimedia Commons contributor',
+                license: info.extmetadata?.LicenseShortName?.value || '',
+                landscape: (info.width || 0) >= (info.height || 0),
+              }))
+              .filter((p) => /^https:\/\//i.test(p.thumbUrl || '') && /^https:\/\//i.test(p.pageUrl || ''))
+              // Landscape-oriented photos read better in the gallery strip
+              // and tend to be scenic shots rather than close-ups.
+              .sort((a, b) => (b.landscape ? 1 : 0) - (a.landscape ? 1 : 0));
+            if (photos.length) return photos.slice(0, limit);
+          } catch (err) {
+            console.warn('Commons photo lookup failed', err);
+            return [];
+          }
+        }
+        return [];
+      })();
+
+      photoCache.set(cacheKey, result);
+      return result;
+    }
+
+    function attachPhotoGallery(body, coord, token) {
+      const gallery = document.createElement('div');
+      gallery.className = 'info-gallery';
+      body.prepend(gallery);
+
+      fetchCommonsPhotos(coord).then((photos) => {
+        if (token !== infoCardToken) return; // a different card is open now
+        if (!photos.length) { gallery.remove(); return; }
+        for (const photo of photos) {
+          const a = document.createElement('a');
+          a.href = photo.pageUrl;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.title = `Photo: ${photo.author}${photo.license ? ' · ' + photo.license : ''} — Wikimedia Commons`;
+          const img = document.createElement('img');
+          img.src = photo.thumbUrl;
+          img.loading = 'lazy';
+          img.alt = '';
+          a.append(img);
+          gallery.append(a);
+        }
+        const caption = document.createElement('p');
+        caption.className = 'info-gallery-attrib';
+        caption.textContent = 'Photos via Wikimedia Commons — may not be this exact spot';
+        gallery.after(caption);
+      }).catch(() => gallery.remove());
+    }
+
+    let infoCardToken = 0;
+
+    function openInfoCard(kicker, title, buildBody, photoCoord) {
+      const token = ++infoCardToken;
+      document.getElementById('info-kicker').textContent = kicker;
+      document.getElementById('info-title').textContent = title || 'Untitled';
+      const body = document.getElementById('info-body');
+      body.innerHTML = '';
+      buildBody(body);
+      if (photoCoord) attachPhotoGallery(body, photoCoord, token);
+      closeSheets();
+      infoSheet.classList.add('open');
+      scrim.classList.add('open');
+    }
+
+    // Midpoint of a trail segment, or the point itself for a rec site —
+    // used only as a coordinate to search for nearby real photography.
+    function centroidOf(geometry) {
+      if (!geometry) return null;
+      if (geometry.type === 'Point') return geometry.coordinates;
+      if (geometry.type === 'LineString') return geometry.coordinates[Math.floor(geometry.coordinates.length / 2)];
+      return null;
+    }
+
+    function showTrailCard(feature) {
+      const props = feature.properties;
+      const name = titleCase(props.trail_name) || `Trail ${props.trail_no || ''}`.trim();
+      setInfoIcon(TRAIL_STYLE);
+      openInfoCard('Trail', name, (body) => {
+        const badges = document.createElement('div');
+        badges.className = 'info-badges';
+        if (props.trail_no) badges.append(badge(`Trail #${props.trail_no}`));
+        if (props.trail_class && TRAIL_CLASS_NAMES[props.trail_class]) {
+          badges.append(badge(`Class ${props.trail_class} · ${TRAIL_CLASS_NAMES[props.trail_class]}`));
+        }
+        if (badges.children.length) body.append(badges);
+
+        const facts = document.createElement('div');
+        facts.className = 'info-facts';
+        const length = props.gis_miles || props.segment_length;
+        [
+          factRow('Type', TRAIL_TYPE_NAMES[props.trail_type] || titleCase(props.trail_type)),
+          factRow('Length (this segment)', length ? `${Number(length).toFixed(1)} mi` : null),
+          factRow('Surface', titleCase(props.trail_surface)),
+          factRow('Managing forest', titleCase(props.forestname)),
+          factRow('Accessibility', titleCase(props.accessibility_status)),
+        ].forEach((row) => row && facts.append(row));
+        body.append(facts);
+      }, centroidOf(feature.geometry));
+    }
+
+    function showRecSiteCard(feature) {
+      const props = feature.properties;
+      const name = props.recareaname || 'Rec Site';
+      const style = ACTIVITY_STYLES[props.markeractivitygroup] || ACTIVITY_STYLES[props.markeractivity] || DEFAULT_ACTIVITY_STYLE;
+      setInfoIcon(style);
+      openInfoCard('Rec Site', name, (body) => {
+        const badges = document.createElement('div');
+        badges.className = 'info-badges';
+        if (props.markeractivity) badges.append(badge(props.markeractivity));
+        if (props.openstatus === 'open') badges.append(badge('Open', 'status-open'));
+        if (props.openstatus === 'closed') badges.append(badge('Closed', 'status-closed'));
+        if (badges.children.length) body.append(badges);
+
+        const facts = document.createElement('div');
+        facts.className = 'info-facts';
+        const season = props.open_season_start && props.open_season_end
+          ? `${props.open_season_start} – ${props.open_season_end}` : null;
+        [
+          factRow('Forest', props.forestname),
+          factRow('Season', season),
+          factRow('Hours', props.operational_hours),
+        ].forEach((row) => row && facts.append(row));
+        if (facts.children.length) body.append(facts);
+
+        const desc = stripHtml(props.recareadescription);
+        if (desc) body.append(paragraph(desc, 'info-desc'));
+
+        const fees = stripHtml(props.feedescription);
+        if (fees) { body.append(sectionTitle('Fees')); body.append(paragraph(fees)); }
+
+        const reservations = stripHtml(props.reservation_info);
+        if (reservations) { body.append(sectionTitle('Reservations')); body.append(paragraph(reservations)); }
+
+        const access = stripHtml(props.accessibility);
+        if (access) { body.append(sectionTitle('Getting there')); body.append(paragraph(access)); }
+
+        const restrictions = stripHtml(props.restrictions);
+        if (restrictions) { body.append(sectionTitle('Restrictions')); body.append(paragraph(restrictions)); }
+
+        const link = externalLink(props.recareaurl, 'Official page ↗');
+        if (link) body.append(link);
+      }, centroidOf(feature.geometry));
+    }
+
+    function setupInfoClicks(map, style) {
+      const styleIds = new Set(style.layers.map((l) => l.id));
+      // The label layer shares the same source features as the dot, so a
+      // tap on the visible text (what people naturally aim for) resolves
+      // to the same rec site as a tap on the tiny circle itself.
+      const recLayers = ['developed-rec', 'developed-rec-label'].filter((id) => styleIds.has(id));
+      const trailLayers = ['trails'].filter((id) => styleIds.has(id));
+      if (!recLayers.length && !trailLayers.length) return;
+
+      for (const id of [...recLayers, ...trailLayers]) {
+        map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+      }
+
+      map.on('click', (e) => {
+        // Padded well past the actual pixel: circles render as small as
+        // 3px radius at low zoom, and finger taps land several CSS px off
+        // target on real phones, so an exact hit is unreliable on touch.
+        const hitBox = [
+          [e.point.x - 16, e.point.y - 16],
+          [e.point.x + 16, e.point.y + 16],
+        ];
+        if (recLayers.length) {
+          const [rec] = map.queryRenderedFeatures(hitBox, { layers: recLayers });
+          if (rec) return showRecSiteCard(rec);
+        }
+        if (trailLayers.length) {
+          const [trail] = map.queryRenderedFeatures(hitBox, { layers: trailLayers });
+          if (trail) return showTrailCard(trail);
+        }
       });
     }
 
@@ -491,7 +947,7 @@
       updatePinVisibility();
     }
 
-    function buildLayerPanel(map, style) {
+    function buildLayerPanel(map, style, manifest) {
       const body = document.getElementById('layers-body');
       const styleIds = new Set(style.layers.map((l) => l.id));
 
@@ -513,8 +969,13 @@
           const row = document.createElement('label');
           row.className = 'row';
 
-          const labelId = `${item.id}-label`;
-          const hasLabel = styleIds.has(labelId);
+          // A land-ownership fill has both a "-outline" companion (its
+          // boundary line) and, for units with a name field, a "-label"
+          // companion — toggling the fill toggles whichever of those exist
+          // alongside it, so the checkbox behaves as one legend row even
+          // though it's really up to three style layers.
+          const companionIds = [`${item.id}-outline`, `${item.id}-label`]
+            .filter((id) => styleIds.has(id));
 
           const box = document.createElement('input');
           box.type = 'checkbox';
@@ -522,7 +983,7 @@
           box.onchange = () => {
             const vis = box.checked ? 'visible' : 'none';
             map.setLayoutProperty(item.id, 'visibility', vis);
-            if (hasLabel) map.setLayoutProperty(labelId, 'visibility', vis);
+            for (const id of companionIds) map.setLayoutProperty(id, 'visibility', vis);
           };
 
           const swatch = document.createElement('span');
@@ -535,6 +996,13 @@
 
           row.append(box, swatch, label);
           wrap.append(row);
+
+          if (typeof item.note === 'function') {
+            const note = document.createElement('p');
+            note.className = 'group-note';
+            note.textContent = item.note(manifest);
+            wrap.append(note);
+          }
         }
 
         body.append(wrap);
@@ -546,7 +1014,7 @@
       body.prepend(note);
     }
 
-    start().catch((error) => say(`Failed to load: ${error.message}`, true));
+    start().catch((error) => say(`Failed to load: ${error.message}`, 'error'));
   </script>
 </body>
 </html>

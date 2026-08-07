@@ -25,19 +25,26 @@
     {
       "id": "background",
       "type": "background",
-      "paint": { "background-color": "#2b2f26" }
+      "paint": {
+        "background-color": "#2b2f26"
+      }
     },
     {
       "id": "satellite",
       "type": "raster",
       "source": "satellite",
-      "paint": { "raster-saturation": -0.15, "raster-brightness-max": 0.95 }
+      "paint": {
+        "raster-saturation": -0.15,
+        "raster-brightness-max": 0.95
+      }
     },
     {
       "id": "hillshade",
       "type": "hillshade",
       "source": "terrain",
-      "layout": { "visibility": "visible" },
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "hillshade-exaggeration": 0.3,
         "hillshade-shadow-color": "#1a1712",
@@ -50,12 +57,47 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
-      "filter": ["any", ["==", ["get", "ADMIN_AGENCY_CODE"], "USFS"], ["has", "forestname"]],
-      "layout": { "visibility": "visible" },
+      "filter": [
+        "any",
+        [
+          "==",
+          [
+            "get",
+            "ADMIN_AGENCY_CODE"
+          ],
+          "USFS"
+        ],
+        [
+          "has",
+          "forestname"
+        ]
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "fill-color": "#4f9d68",
-        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.16, 9, 0.28, 13, 0.36],
-        "fill-outline-color": "#2c5b3c"
+        "fill-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.05,
+          7,
+          0.08,
+          8,
+          0.12,
+          9,
+          0.18,
+          11,
+          0.26,
+          13,
+          0.32
+        ]
       }
     },
     {
@@ -63,12 +105,40 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
-      "filter": ["==", ["get", "ADMIN_AGENCY_CODE"], "BLM"],
-      "layout": { "visibility": "visible" },
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "BLM"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "fill-color": "#e0b073",
-        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.16, 9, 0.28, 13, 0.36],
-        "fill-outline-color": "#a97f45"
+        "fill-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0,
+          8,
+          0,
+          9,
+          0.1,
+          10,
+          0.18,
+          12,
+          0.26,
+          14,
+          0.32
+        ]
       }
     },
     {
@@ -76,12 +146,40 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
-      "filter": ["==", ["get", "ADMIN_AGENCY_CODE"], "NPS"],
-      "layout": { "visibility": "visible" },
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "NPS"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "fill-color": "#a98fd2",
-        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.18, 9, 0.30, 13, 0.40],
-        "fill-outline-color": "#654f85"
+        "fill-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.05,
+          7,
+          0.08,
+          8,
+          0.12,
+          9,
+          0.18,
+          11,
+          0.26,
+          13,
+          0.32
+        ]
       }
     },
     {
@@ -89,12 +187,40 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
-      "filter": ["==", ["get", "ADMIN_AGENCY_CODE"], "ST"],
-      "layout": { "visibility": "visible" },
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "ST"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "fill-color": "#5fa8dd",
-        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.16, 9, 0.28, 13, 0.36],
-        "fill-outline-color": "#356c97"
+        "fill-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0,
+          8,
+          0,
+          9,
+          0.1,
+          10,
+          0.18,
+          12,
+          0.26,
+          14,
+          0.32
+        ]
       }
     },
     {
@@ -102,12 +228,40 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
-      "filter": ["==", ["get", "ADMIN_AGENCY_CODE"], "FWS"],
-      "layout": { "visibility": "visible" },
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "FWS"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "fill-color": "#d98f66",
-        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.16, 9, 0.28, 13, 0.36],
-        "fill-outline-color": "#8f4f31"
+        "fill-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.05,
+          7,
+          0.08,
+          8,
+          0.12,
+          9,
+          0.18,
+          11,
+          0.26,
+          13,
+          0.32
+        ]
       }
     },
     {
@@ -115,12 +269,40 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
-      "filter": ["==", ["get", "ADMIN_AGENCY_CODE"], "DOD"],
-      "layout": { "visibility": "none" },
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "DOD"
+      ],
+      "layout": {
+        "visibility": "none"
+      },
       "paint": {
         "fill-color": "#b23a3a",
-        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.18, 9, 0.28, 13, 0.34],
-        "fill-outline-color": "#7a2424"
+        "fill-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.05,
+          7,
+          0.08,
+          8,
+          0.12,
+          9,
+          0.18,
+          11,
+          0.26,
+          13,
+          0.32
+        ]
       }
     },
     {
@@ -128,11 +310,427 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "wilderness",
-      "layout": { "visibility": "none" },
+      "filter": [
+        "all"
+      ],
+      "layout": {
+        "visibility": "none"
+      },
       "paint": {
         "fill-color": "#2f5d43",
-        "fill-opacity": 0.28,
-        "fill-outline-color": "#1f4530"
+        "fill-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.05,
+          7,
+          0.08,
+          8,
+          0.12,
+          9,
+          0.18,
+          11,
+          0.26,
+          13,
+          0.32
+        ]
+      }
+    },
+    {
+      "id": "public-land-usfs-outline",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": [
+        "any",
+        [
+          "==",
+          [
+            "get",
+            "ADMIN_AGENCY_CODE"
+          ],
+          "USFS"
+        ],
+        [
+          "has",
+          "forestname"
+        ]
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#2c5b3c",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.2,
+          8,
+          0.35,
+          10,
+          0.6,
+          13,
+          1
+        ],
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.15,
+          8,
+          0.3,
+          10,
+          0.45,
+          13,
+          0.6
+        ]
+      }
+    },
+    {
+      "id": "public-land-blm-outline",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "BLM"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#a97f45",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0,
+          8,
+          0,
+          9,
+          0.4,
+          11,
+          0.7,
+          13,
+          1,
+          15,
+          1.3
+        ],
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0,
+          8,
+          0,
+          9,
+          0.35,
+          11,
+          0.55,
+          13,
+          0.7
+        ]
+      }
+    },
+    {
+      "id": "public-land-nps-outline",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "NPS"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#654f85",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.2,
+          8,
+          0.35,
+          10,
+          0.6,
+          13,
+          1
+        ],
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.15,
+          8,
+          0.3,
+          10,
+          0.45,
+          13,
+          0.6
+        ]
+      }
+    },
+    {
+      "id": "public-land-state-outline",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "ST"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#356c97",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0,
+          8,
+          0,
+          9,
+          0.4,
+          11,
+          0.7,
+          13,
+          1,
+          15,
+          1.3
+        ],
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0,
+          8,
+          0,
+          9,
+          0.35,
+          11,
+          0.55,
+          13,
+          0.7
+        ]
+      }
+    },
+    {
+      "id": "public-land-fws-outline",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "FWS"
+      ],
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#8f4f31",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.2,
+          8,
+          0.35,
+          10,
+          0.6,
+          13,
+          1
+        ],
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.15,
+          8,
+          0.3,
+          10,
+          0.45,
+          13,
+          0.6
+        ]
+      }
+    },
+    {
+      "id": "public-land-dod-outline",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "public_land",
+      "filter": [
+        "==",
+        [
+          "get",
+          "ADMIN_AGENCY_CODE"
+        ],
+        "DOD"
+      ],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "line-color": "#7a2424",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.2,
+          8,
+          0.35,
+          10,
+          0.6,
+          13,
+          1
+        ],
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.15,
+          8,
+          0.3,
+          10,
+          0.45,
+          13,
+          0.6
+        ]
+      }
+    },
+    {
+      "id": "wilderness-outline",
+      "type": "line",
+      "source": "backcountry",
+      "source-layer": "wilderness",
+      "filter": [
+        "all"
+      ],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "line-color": "#1f4530",
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.2,
+          8,
+          0.35,
+          10,
+          0.6,
+          13,
+          1
+        ],
+        "line-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          6,
+          0.15,
+          8,
+          0.3,
+          10,
+          0.45,
+          13,
+          0.6
+        ]
       }
     },
     {
@@ -140,12 +738,20 @@
       "type": "symbol",
       "source": "backcountry",
       "source-layer": "public_land",
-      "filter": ["has", "forestname"],
+      "filter": [
+        "has",
+        "forestname"
+      ],
       "minzoom": 8,
       "layout": {
         "visibility": "visible",
-        "text-field": ["get", "forestname"],
-        "text-font": ["Open Sans Regular"],
+        "text-field": [
+          "get",
+          "forestname"
+        ],
+        "text-font": [
+          "Open Sans Regular"
+        ],
         "text-size": 11,
         "text-transform": "uppercase",
         "text-letter-spacing": 0.08,
@@ -163,16 +769,25 @@
       "type": "symbol",
       "source": "backcountry",
       "source-layer": "wilderness",
-      "filter": ["has", "wildernessname"],
+      "filter": [
+        "has",
+        "wildernessname"
+      ],
       "minzoom": 9,
       "layout": {
         "visibility": "none",
-        "text-field": ["get", "wildernessname"],
-        "text-font": ["Open Sans Regular"],
+        "text-field": [
+          "get",
+          "wildernessname"
+        ],
+        "text-font": [
+          "Open Sans Regular"
+        ],
         "text-size": 11,
         "text-transform": "uppercase",
         "text-letter-spacing": 0.08,
-        "text-max-width": 8
+        "text-max-width": 8,
+        "symbol-placement": "point"
       },
       "paint": {
         "text-color": "#1f4530",
@@ -185,16 +800,29 @@
       "type": "line",
       "source": "backcountry",
       "source-layer": "contours",
-      "layout": { "visibility": "none" },
+      "layout": {
+        "visibility": "none"
+      },
       "paint": {
         "line-color": "#f2e9d8",
         "line-width": [
           "case",
-          ["==", ["%", ["get", "elevation"], 200], 0],
+          [
+            "==",
+            [
+              "%",
+              [
+                "get",
+                "elevation"
+              ],
+              200
+            ],
+            0
+          ],
           1.1,
           0.5
         ],
-        "line-opacity": 0.5
+        "line-opacity": 0.55
       }
     },
     {
@@ -202,10 +830,12 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "cell_coverage",
-      "layout": { "visibility": "none" },
+      "layout": {
+        "visibility": "none"
+      },
       "paint": {
         "fill-color": "#4a90c2",
-        "fill-opacity": 0.22
+        "fill-opacity": 0.2
       }
     },
     {
@@ -213,12 +843,36 @@
       "type": "line",
       "source": "backcountry",
       "source-layer": "mvum_routes",
-      "filter": ["to-boolean", ["get", "dispersed_camping"]],
-      "layout": { "visibility": "visible", "line-cap": "round" },
+      "filter": [
+        "to-boolean",
+        [
+          "get",
+          "dispersed_camping"
+        ]
+      ],
+      "layout": {
+        "visibility": "visible",
+        "line-cap": "round"
+      },
       "paint": {
         "line-color": "#ff9a52",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.8, 14, 2.8],
-        "line-dasharray": [1, 0]
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          8,
+          0.8,
+          14,
+          2.8
+        ],
+        "line-dasharray": [
+          1,
+          0
+        ]
       }
     },
     {
@@ -226,12 +880,39 @@
       "type": "line",
       "source": "backcountry",
       "source-layer": "mvum_routes",
-      "filter": ["!", ["to-boolean", ["get", "dispersed_camping"]]],
-      "layout": { "visibility": "none", "line-cap": "round" },
+      "filter": [
+        "!",
+        [
+          "to-boolean",
+          [
+            "get",
+            "dispersed_camping"
+          ]
+        ]
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-cap": "round"
+      },
       "paint": {
         "line-color": "#e8d9b8",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.8, 14, 2.8],
-        "line-dasharray": [3, 2]
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          8,
+          0.8,
+          14,
+          2.8
+        ],
+        "line-dasharray": [
+          3,
+          2
+        ]
       }
     },
     {
@@ -239,11 +920,28 @@
       "type": "line",
       "source": "backcountry",
       "source-layer": "trails",
-      "layout": { "visibility": "visible" },
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "line-color": "#fff4d6",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.7, 15, 2.2],
-        "line-dasharray": [2, 2]
+        "line-width": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          10,
+          0.7,
+          15,
+          2.2
+        ],
+        "line-dasharray": [
+          2,
+          2
+        ]
       }
     },
     {
@@ -251,7 +949,9 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "closures",
-      "layout": { "visibility": "visible" },
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
         "fill-color": "#e53e2e",
         "fill-opacity": 0.45,
@@ -263,17 +963,43 @@
       "type": "circle",
       "source": "backcountry",
       "source-layer": "developed_rec",
-      "layout": { "visibility": "visible" },
+      "layout": {
+        "visibility": "visible"
+      },
       "paint": {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 3, 11, 5, 15, 8],
+        "circle-radius": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          7,
+          3,
+          11,
+          5,
+          15,
+          8
+        ],
         "circle-color": [
-          "match", ["get", "markeractivitygroup"],
-          "Camping & Cabins", "#ff9a52",
-          "Picnicking", "#4f9d68",
-          "Hiking", "#c99a5b",
-          "Fishing", "#5fa8dd",
-          "Water Activities", "#5fa8dd",
-          "OHV Riding & Camping", "#e0763f",
+          "match",
+          [
+            "get",
+            "markeractivitygroup"
+          ],
+          "Camping & Cabins",
+          "#ff9a52",
+          "Picnicking",
+          "#4f9d68",
+          "Hiking",
+          "#c99a5b",
+          "Fishing",
+          "#5fa8dd",
+          "Water Activities",
+          "#5fa8dd",
+          "OHV Riding & Camping",
+          "#e0763f",
           "#c8c8c8"
         ],
         "circle-stroke-width": 1.4,
@@ -285,21 +1011,94 @@
       "type": "symbol",
       "source": "backcountry",
       "source-layer": "developed_rec",
-      "filter": ["has", "recareaname"],
+      "filter": [
+        "has",
+        "recareaname"
+      ],
       "minzoom": 11,
       "layout": {
         "visibility": "visible",
-        "text-field": ["get", "recareaname"],
-        "text-font": ["Open Sans Regular"],
+        "text-field": [
+          "get",
+          "recareaname"
+        ],
+        "text-font": [
+          "Open Sans Regular"
+        ],
         "text-size": 11,
-        "text-offset": [0, 1.1],
+        "text-offset": [
+          0,
+          1.1
+        ],
         "text-anchor": "top",
         "text-optional": true
       },
       "paint": {
-        "text-color": "#2b2f26",
-        "text-halo-color": "rgba(255,255,255,0.9)",
+        "text-color": "#eceee9",
+        "text-halo-color": "rgba(20,22,18,0.85)",
         "text-halo-width": 1.2
+      }
+    },
+    {
+      "id": "spots",
+      "type": "circle",
+      "source": "backcountry",
+      "source-layer": "spots",
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "circle-radius": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          8,
+          [
+            "+",
+            2,
+            [
+              "*",
+              2,
+              [
+                "get",
+                "score"
+              ]
+            ]
+          ],
+          14,
+          [
+            "+",
+            5,
+            [
+              "*",
+              6,
+              [
+                "get",
+                "score"
+              ]
+            ]
+          ]
+        ],
+        "circle-color": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "get",
+            "obscurity"
+          ],
+          0,
+          "#8a8a8a",
+          1,
+          "#1e7a4a"
+        ],
+        "circle-stroke-width": 1.2,
+        "circle-stroke-color": "#ffffff"
       }
     }
   ]
