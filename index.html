@@ -539,11 +539,18 @@
       if (photoCache.has(cacheKey)) return photoCache.get(cacheKey);
 
       const result = await (async () => {
-        for (const radiusMeters of [750, 4000]) {
+        // geosearch already sorts by distance from the coordinate, so one
+        // moderately generous radius with a bigger candidate pool
+        // naturally prefers the closest usable photos — an earlier,
+        // tighter-radius/smaller-pool version stopped as soon as it found
+        // *any* single valid match (often a mediocre one), crowding out
+        // much better photos that were still nearby but past the cutoff.
+        // Only widen further if the area truly has nothing at all.
+        for (const radiusMeters of [5000, 15000]) {
           const url = 'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
             action: 'query', generator: 'geosearch',
-            ggscoord: `${lat}|${lng}`, ggsradius: String(radiusMeters), ggslimit: '20', ggsnamespace: '6',
-            prop: 'imageinfo', iiprop: 'url|extmetadata|mime', iiurlwidth: '480',
+            ggscoord: `${lat}|${lng}`, ggsradius: String(radiusMeters), ggslimit: '40', ggsnamespace: '6',
+            prop: 'imageinfo', iiprop: 'url|extmetadata|mime|size', iiurlwidth: '480',
             format: 'json', origin: '*',
           });
           try {
@@ -553,17 +560,33 @@
               .filter((p) => p.imageinfo?.[0])
               .map((p) => ({ title: p.title, info: p.imageinfo[0] }))
               .filter(({ info }) => info.mime === 'image/jpeg' || info.mime === 'image/png')
-              // Geotagged astronaut/satellite photography ("ISS054-E-...
-              // View of Earth") shows up in geosearch near almost any
-              // coordinate on the globe — not a picture of this place.
-              .filter(({ title }) => !/logo|icon|flag|diagram|chart|\bmap\b|signage|sign\.jpg|^ISS\d|View of Earth|Landsat|Sentinel-\d|\bMODIS\b|Earth Observatory/i.test(title))
+              .filter(({ title, info }) => {
+                const categories = info.extmetadata?.Categories?.value || '';
+                // iNaturalist/GBIF entries are single-species ID photos
+                // (a mushroom cap, one wildflower, a bug) uploaded for
+                // species records, not pictures of the place — geotagged
+                // precisely, so they otherwise pass every other filter.
+                if (/iNaturalist|\bGBIF\b/i.test(categories)) return false;
+                const haystack = `${title} ${categories}`;
+                // Geotagged astronaut photography (titled "ISS014-E-11963
+                // - View of Utah", "ISS054-E-42045 - View of Earth", etc.)
+                // and other non-scenic or specimen-macro subjects that
+                // show up in geosearch near almost any coordinate without
+                // being a picture of this place. Note: titles come back as
+                // "File:XXX.jpg", so ISS### must not be anchored to ^.
+                return !/\bISS\d{3}-E-\d+\b|Satellite (pictures?|images?) of|logo|icon|flag|diagram|chart|\bmap\b|signage|sign\.jpg|Landsat|Sentinel-\d|\bMODIS\b|\bASTER\b|Earth Observatory|fung(i|us)|mushroom|lichen|\bmoss\b|insect|arthropod|spider|beetle|larva|caterpillar|close-?up|macro photography|specimen|hoar frost|frost crystal|snowflake|flood damage|fire damage|storm damage|burn scar|wildfire|road damage|construction|\binterstate\b|freeway|\binversion\b|traffic jam/i.test(haystack);
+              })
               .map(({ info }) => ({
                 thumbUrl: info.thumburl,
                 pageUrl: info.descriptionurl,
                 author: stripHtml(info.extmetadata?.Artist?.value) || 'Wikimedia Commons contributor',
                 license: info.extmetadata?.LicenseShortName?.value || '',
+                landscape: (info.width || 0) >= (info.height || 0),
               }))
-              .filter((p) => /^https:\/\//i.test(p.thumbUrl || '') && /^https:\/\//i.test(p.pageUrl || ''));
+              .filter((p) => /^https:\/\//i.test(p.thumbUrl || '') && /^https:\/\//i.test(p.pageUrl || ''))
+              // Landscape-oriented photos read better in the gallery strip
+              // and tend to be scenic shots rather than close-ups.
+              .sort((a, b) => (b.landscape ? 1 : 0) - (a.landscape ? 1 : 0));
             if (photos.length) return photos.slice(0, limit);
           } catch (err) {
             console.warn('Commons photo lookup failed', err);
