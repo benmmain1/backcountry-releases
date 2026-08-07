@@ -586,7 +586,7 @@
 
     // The USFS/BLM tile data has no site photography (see the dead
     // "markertype" image path noted above), so real pictures come from
-    // Wikimedia Commons' and Flickr's geosearch APIs instead — real
+    // Wikimedia Commons' and Mapillary's geosearch APIs instead — real
     // photos taken near this exact coordinate. Best-effort: remote
     // backcountry spots often have nothing nearby on either source, in
     // which case the gallery just doesn't appear.
@@ -666,63 +666,57 @@
       return result;
     }
 
-    // Flickr has a much bigger corpus of real hiker/backpacker photos than
-    // Commons, which helps for named lakes/peaks Commons has nothing for —
-    // but flickr.photos.search requires a (free) API key even for public
-    // read-only search, unlike Commons' keyless geosearch. Get one at
-    // https://www.flickr.com/services/apps/create/apply (instant, no
-    // review) and paste it in below. Left blank, this source just no-ops
-    // and the gallery falls back to Commons-only, same as before.
-    const FLICKR_API_KEY = '';
-    const FLICKR_LICENSES = {
-      1: 'CC BY-NC-SA 2.0', 2: 'CC BY-NC 2.0', 3: 'CC BY-NC-ND 2.0', 4: 'CC BY 2.0',
-      5: 'CC BY-SA 2.0', 6: 'CC BY-ND 2.0', 7: 'Public Domain', 8: 'US Gov Work',
-      9: 'CC0', 10: 'Public Domain',
-    };
-    const flickrCache = new Map();
-    async function fetchFlickrPhotos([lng, lat], limit = 4) {
-      if (!FLICKR_API_KEY) return [];
+    // Mapillary has a large corpus of crowdsourced street/trail-level
+    // photos, which helps fill in spots Commons has nothing for — skews
+    // toward accessible trailheads/roads rather than the exact backcountry
+    // destination, since coverage drops once contributors leave a mapped
+    // track. Get a free access token at mapillary.com/developer (dashboard
+    // -> create an app -> "Client Token", starts with "MLY|") and paste it
+    // in below. Left blank, this source just no-ops and the gallery falls
+    // back to Commons-only, same as before.
+    const MAPILLARY_ACCESS_TOKEN = '';
+    const mapillaryCache = new Map();
+    async function fetchMapillaryPhotos([lng, lat], limit = 4) {
+      if (!MAPILLARY_ACCESS_TOKEN) return [];
       const cacheKey = `${lng.toFixed(4)},${lat.toFixed(4)}`;
-      if (flickrCache.has(cacheKey)) return flickrCache.get(cacheKey);
+      if (mapillaryCache.has(cacheKey)) return mapillaryCache.get(cacheKey);
 
       const result = await (async () => {
+        // Mapillary's Images endpoint filters by bbox, not lat/lon+radius,
+        // so approximate a box in degrees — 1 degree latitude is ~111km
+        // everywhere; longitude shrinks with latitude, so scale it by
+        // cos(lat). Good enough for a "nearby photos" search, not survey
+        // precision.
         for (const radiusKm of [5, 15]) {
-          const url = 'https://www.flickr.com/services/rest/?' + new URLSearchParams({
-            method: 'flickr.photos.search', api_key: FLICKR_API_KEY, format: 'json', nojsoncallback: '1',
-            lat: String(lat), lon: String(lng), radius: String(radiusKm), radius_units: 'km',
-            has_geo: '1', content_type: '1', media: 'photos', safe_search: '1',
-            // Exclude license 0 (All Rights Reserved) — every other code is
-            // some flavor of CC, public domain, or US-gov, same spirit as
-            // Commons only hosting openly-licensed work.
-            license: '1,2,3,4,5,6,7,8,9,10',
-            sort: 'interestingness-desc', per_page: '40',
-            extras: 'url_z,url_m,owner_name,license',
+          const dLat = radiusKm / 111;
+          const dLng = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
+          const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].join(',');
+          const url = 'https://graph.mapillary.com/images?' + new URLSearchParams({
+            access_token: MAPILLARY_ACCESS_TOKEN, bbox,
+            fields: 'id,thumb_1024_url,creator', limit: '40',
           });
           try {
             const data = await fetch(url).then((r) => r.json());
-            if (data.stat !== 'ok') return [];
-            const photos = (data.photos?.photo || [])
-              .filter((p) => p.url_z || p.url_m)
-              .filter((p) => !JUNK_PHOTO_PATTERN.test(p.title || ''))
+            const photos = (data.data || [])
+              .filter((p) => p.thumb_1024_url)
               .map((p) => ({
-                thumbUrl: p.url_z || p.url_m,
-                pageUrl: `https://www.flickr.com/photos/${p.owner}/${p.id}/`,
-                author: p.ownername || 'Flickr contributor',
-                license: FLICKR_LICENSES[p.license] || '',
-                landscape: (p.url_z ? p.width_z : p.width_m) >= (p.url_z ? p.height_z : p.height_m),
-                source: 'Flickr',
-              }))
-              .sort((a, b) => (b.landscape ? 1 : 0) - (a.landscape ? 1 : 0));
+                thumbUrl: p.thumb_1024_url,
+                pageUrl: `https://www.mapillary.com/app/?pKey=${p.id}&focus=photo`,
+                author: p.creator?.username || 'Mapillary contributor',
+                license: 'CC BY-SA 4.0',
+                landscape: true, // street-level captures are effectively all landscape framing
+                source: 'Mapillary',
+              }));
             if (photos.length) return photos.slice(0, limit);
           } catch (err) {
-            console.warn('Flickr photo lookup failed', err);
+            console.warn('Mapillary photo lookup failed', err);
             return [];
           }
         }
         return [];
       })();
 
-      flickrCache.set(cacheKey, result);
+      mapillaryCache.set(cacheKey, result);
       return result;
     }
 
@@ -731,13 +725,13 @@
       gallery.className = 'info-gallery';
       body.prepend(gallery);
 
-      Promise.all([fetchCommonsPhotos(coord), fetchFlickrPhotos(coord)]).then(([commonsPhotos, flickrPhotos]) => {
+      Promise.all([fetchCommonsPhotos(coord), fetchMapillaryPhotos(coord)]).then(([commonsPhotos, mapillaryPhotos]) => {
         if (token !== infoCardToken) return; // a different card is open now
         // Commons leads since it's pre-vetted (Commons only hosts
-        // openly-licensed work); Flickr's bigger corpus fills remaining
-        // slots once Commons runs dry, which is most of the time for
-        // genuinely remote spots.
-        const photos = [...commonsPhotos, ...flickrPhotos].slice(0, 4);
+        // openly-licensed work) and tends to have more scenic shots;
+        // Mapillary's bigger corpus fills remaining slots once Commons
+        // runs dry, which is most of the time for genuinely remote spots.
+        const photos = [...commonsPhotos, ...mapillaryPhotos].slice(0, 4);
         if (!photos.length) { gallery.remove(); return; }
         for (const photo of photos) {
           const a = document.createElement('a');
