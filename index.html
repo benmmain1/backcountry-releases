@@ -674,7 +674,7 @@
     // -> create an app -> "Client Token", starts with "MLY|") and paste it
     // in below. Left blank, this source just no-ops and the gallery falls
     // back to Commons-only, same as before.
-    const MAPILLARY_ACCESS_TOKEN = '';
+    const MAPILLARY_ACCESS_TOKEN = 'MLY|28033125776354795|a36ac5f01c5566b0920ceb5fe531b721';
     const mapillaryCache = new Map();
     async function fetchMapillaryPhotos([lng, lat], limit = 4) {
       if (!MAPILLARY_ACCESS_TOKEN) return [];
@@ -687,13 +687,23 @@
         // everywhere; longitude shrinks with latitude, so scale it by
         // cos(lat). Good enough for a "nearby photos" search, not survey
         // precision.
-        for (const radiusKm of [5, 15]) {
+        //
+        // Kept deliberately small: the endpoint has an undocumented
+        // total-response-size budget and hard-errors (rather than
+        // truncating) once a bbox pulls back too much — verified by
+        // testing that even a ~1km box errors out in dense coverage
+        // areas (e.g. downtown SF) once thumb_1024_url/creator fields are
+        // requested. Remote backcountry spots have far sparser coverage,
+        // so this stays well under that budget in practice; a hit near a
+        // genuinely dense area just falls through to Commons-only, same
+        // as any other empty result.
+        for (const radiusKm of [0.5, 1.5]) {
           const dLat = radiusKm / 111;
           const dLng = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
           const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].join(',');
           const url = 'https://graph.mapillary.com/images?' + new URLSearchParams({
             access_token: MAPILLARY_ACCESS_TOKEN, bbox,
-            fields: 'id,thumb_1024_url,creator', limit: '40',
+            fields: 'id,thumb_1024_url,creator',
           });
           try {
             const data = await fetch(url).then((r) => r.json());
