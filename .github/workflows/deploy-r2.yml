@@ -8,6 +8,7 @@ on:
     paths:
       - "index.html"
       - "style.json"
+      - "*.pmtiles"
       - ".github/workflows/deploy-r2.yml"
   workflow_dispatch: {}
 
@@ -38,3 +39,18 @@ jobs:
             --endpoint-url "${R2_ENDPOINT}" \
             --content-type "application/json" \
             --cache-control "public, max-age=60"
+
+          # Small derived-data archives (e.g. a pilot-area spots.pmtiles) that
+          # style.json references under ut/<name> alongside the main
+          # trails/land pack. Anything sizeable (the statewide backcountry-ut
+          # / terrain-ut archives) is published straight to R2 by
+          # backcountry.pipeline.publish instead — this loop is for the
+          # small stuff this repo can reasonably hold in git.
+          shopt -s nullglob
+          for f in *.pmtiles; do
+            echo "uploading $f -> ut/$f"
+            aws s3 cp "$f" "s3://${R2_BUCKET}/ut/$f" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "application/octet-stream" \
+              --cache-control "public, max-age=300"
+          done

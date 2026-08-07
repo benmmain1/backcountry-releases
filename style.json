@@ -11,6 +11,10 @@
       "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/terrain-ut.pmtiles",
       "tileSize": 512
     },
+    "spots": {
+      "type": "vector",
+      "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/spots-ut-pilot.pmtiles"
+    },
     "satellite": {
       "type": "raster",
       "tiles": [
@@ -1042,7 +1046,7 @@
     {
       "id": "spots",
       "type": "circle",
-      "source": "backcountry",
+      "source": "spots",
       "source-layer": "spots",
       "layout": {
         "visibility": "visible"
