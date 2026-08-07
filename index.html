@@ -161,6 +161,14 @@
     border-radius: 50%; cursor: pointer; color: var(--text);
     display: flex; align-items: center; justify-content: center;
   }
+  .info-gallery {
+    display: flex; gap: 8px; overflow-x: auto; margin: 2px -18px 10px; padding: 0 18px;
+    scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+  }
+  .info-gallery:empty { display: none; }
+  .info-gallery a { flex: none; scroll-snap-align: start; border-radius: 10px; overflow: hidden; display: block; }
+  .info-gallery img { display: block; height: 140px; width: auto; max-width: 220px; object-fit: cover; background: var(--border); }
+  .info-gallery-attrib { font-size: 10.5px; color: var(--muted); margin: -6px 0 12px; }
   .info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
   .info-badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--border); white-space: nowrap; }
   .info-badge.status-open { background: rgba(63,125,84,.16); color: var(--accent); }
@@ -519,18 +527,110 @@
       return a;
     }
 
-    function openInfoCard(kicker, title, buildBody) {
+    // The USFS/BLM tile data has no site photography (see the dead
+    // "markertype" image path noted above), so real pictures come from
+    // Wikimedia Commons' free geosearch API instead — real photos taken
+    // near this exact coordinate, keyless and CORS-enabled for browser
+    // use. Best-effort: outdoor rec sites often have nothing nearby, in
+    // which case the gallery just doesn't appear.
+    const photoCache = new Map();
+    async function fetchCommonsPhotos([lng, lat], limit = 4) {
+      const cacheKey = `${lng.toFixed(4)},${lat.toFixed(4)}`;
+      if (photoCache.has(cacheKey)) return photoCache.get(cacheKey);
+
+      const result = await (async () => {
+        for (const radiusMeters of [750, 4000]) {
+          const url = 'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+            action: 'query', generator: 'geosearch',
+            ggscoord: `${lat}|${lng}`, ggsradius: String(radiusMeters), ggslimit: '20', ggsnamespace: '6',
+            prop: 'imageinfo', iiprop: 'url|extmetadata|mime', iiurlwidth: '480',
+            format: 'json', origin: '*',
+          });
+          try {
+            const data = await fetch(url).then((r) => r.json());
+            const pages = Object.values(data?.query?.pages || {});
+            const photos = pages
+              .filter((p) => p.imageinfo?.[0])
+              .map((p) => ({ title: p.title, info: p.imageinfo[0] }))
+              .filter(({ info }) => info.mime === 'image/jpeg' || info.mime === 'image/png')
+              // Geotagged astronaut/satellite photography ("ISS054-E-...
+              // View of Earth") shows up in geosearch near almost any
+              // coordinate on the globe — not a picture of this place.
+              .filter(({ title }) => !/logo|icon|flag|diagram|chart|\bmap\b|signage|sign\.jpg|^ISS\d|View of Earth|Landsat|Sentinel-\d|\bMODIS\b|Earth Observatory/i.test(title))
+              .map(({ info }) => ({
+                thumbUrl: info.thumburl,
+                pageUrl: info.descriptionurl,
+                author: stripHtml(info.extmetadata?.Artist?.value) || 'Wikimedia Commons contributor',
+                license: info.extmetadata?.LicenseShortName?.value || '',
+              }))
+              .filter((p) => /^https:\/\//i.test(p.thumbUrl || '') && /^https:\/\//i.test(p.pageUrl || ''));
+            if (photos.length) return photos.slice(0, limit);
+          } catch (err) {
+            console.warn('Commons photo lookup failed', err);
+            return [];
+          }
+        }
+        return [];
+      })();
+
+      photoCache.set(cacheKey, result);
+      return result;
+    }
+
+    function attachPhotoGallery(body, coord, token) {
+      const gallery = document.createElement('div');
+      gallery.className = 'info-gallery';
+      body.prepend(gallery);
+
+      fetchCommonsPhotos(coord).then((photos) => {
+        if (token !== infoCardToken) return; // a different card is open now
+        if (!photos.length) { gallery.remove(); return; }
+        for (const photo of photos) {
+          const a = document.createElement('a');
+          a.href = photo.pageUrl;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.title = `Photo: ${photo.author}${photo.license ? ' · ' + photo.license : ''} — Wikimedia Commons`;
+          const img = document.createElement('img');
+          img.src = photo.thumbUrl;
+          img.loading = 'lazy';
+          img.alt = '';
+          a.append(img);
+          gallery.append(a);
+        }
+        const caption = document.createElement('p');
+        caption.className = 'info-gallery-attrib';
+        caption.textContent = 'Photos via Wikimedia Commons — may not be this exact spot';
+        gallery.after(caption);
+      }).catch(() => gallery.remove());
+    }
+
+    let infoCardToken = 0;
+
+    function openInfoCard(kicker, title, buildBody, photoCoord) {
+      const token = ++infoCardToken;
       document.getElementById('info-kicker').textContent = kicker;
       document.getElementById('info-title').textContent = title || 'Untitled';
       const body = document.getElementById('info-body');
       body.innerHTML = '';
       buildBody(body);
+      if (photoCoord) attachPhotoGallery(body, photoCoord, token);
       closeSheets();
       infoSheet.classList.add('open');
       scrim.classList.add('open');
     }
 
-    function showTrailCard(props) {
+    // Midpoint of a trail segment, or the point itself for a rec site —
+    // used only as a coordinate to search for nearby real photography.
+    function centroidOf(geometry) {
+      if (!geometry) return null;
+      if (geometry.type === 'Point') return geometry.coordinates;
+      if (geometry.type === 'LineString') return geometry.coordinates[Math.floor(geometry.coordinates.length / 2)];
+      return null;
+    }
+
+    function showTrailCard(feature) {
+      const props = feature.properties;
       const name = titleCase(props.trail_name) || `Trail ${props.trail_no || ''}`.trim();
       setInfoIcon(TRAIL_STYLE);
       openInfoCard('Trail', name, (body) => {
@@ -553,10 +653,11 @@
           factRow('Accessibility', titleCase(props.accessibility_status)),
         ].forEach((row) => row && facts.append(row));
         body.append(facts);
-      });
+      }, centroidOf(feature.geometry));
     }
 
-    function showRecSiteCard(props) {
+    function showRecSiteCard(feature) {
+      const props = feature.properties;
       const name = props.recareaname || 'Rec Site';
       const style = ACTIVITY_STYLES[props.markeractivitygroup] || ACTIVITY_STYLES[props.markeractivity] || DEFAULT_ACTIVITY_STYLE;
       setInfoIcon(style);
@@ -596,7 +697,7 @@
 
         const link = externalLink(props.recareaurl, 'Official page ↗');
         if (link) body.append(link);
-      });
+      }, centroidOf(feature.geometry));
     }
 
     function setupInfoClicks(map, style) {
@@ -623,11 +724,11 @@
         ];
         if (recLayers.length) {
           const [rec] = map.queryRenderedFeatures(hitBox, { layers: recLayers });
-          if (rec) return showRecSiteCard(rec.properties);
+          if (rec) return showRecSiteCard(rec);
         }
         if (trailLayers.length) {
           const [trail] = map.queryRenderedFeatures(hitBox, { layers: trailLayers });
-          if (trail) return showTrailCard(trail.properties);
+          if (trail) return showTrailCard(trail);
         }
       });
     }
