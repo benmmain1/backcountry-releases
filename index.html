@@ -808,18 +808,27 @@
       return result;
     }
 
-    function attachPhotoGallery(body, coord, token) {
+    function attachPhotoGallery(body, coord, token, curatedPhoto) {
       const gallery = document.createElement('div');
       gallery.className = 'info-gallery';
       body.prepend(gallery);
 
       Promise.all([fetchCommonsPhotos(coord), fetchMapillaryPhotos(coord)]).then(([commonsPhotos, mapillaryPhotos]) => {
         if (token !== infoCardToken) return; // a different card is open now
-        // Commons leads since it's pre-vetted (Commons only hosts
-        // openly-licensed work) and tends to have more scenic shots;
-        // Mapillary's bigger corpus fills remaining slots once Commons
-        // runs dry, which is most of the time for genuinely remote spots.
-        const photos = [...commonsPhotos, ...mapillaryPhotos].slice(0, 4);
+        // The curated photo (when present) is hand-verified as this exact
+        // spot, pulled from one of the recommendation's own cited sources,
+        // so it always leads. Commons/Mapillary fill remaining slots as
+        // best-effort nearby matches — useful for surrounding terrain, but
+        // not verified against this specific spot the way curated is.
+        const curated = curatedPhoto?.url ? [{
+          thumbUrl: curatedPhoto.url,
+          pageUrl: curatedPhoto.creditUrl,
+          author: curatedPhoto.creditLabel || 'Source',
+          license: '',
+          source: curatedPhoto.creditLabel || 'Source',
+          verified: true,
+        }] : [];
+        const photos = [...curated, ...commonsPhotos, ...mapillaryPhotos].slice(0, 4);
         if (!photos.length) { gallery.remove(); return; }
         for (const photo of photos) {
           const a = document.createElement('a');
@@ -834,24 +843,26 @@
           a.append(img);
           gallery.append(a);
         }
-        const sources = [...new Set(photos.map((p) => p.source))];
+        const restSources = [...new Set(photos.filter((p) => !p.verified).map((p) => p.source))];
         const caption = document.createElement('p');
         caption.className = 'info-gallery-attrib';
-        caption.textContent = `Photos via ${sources.join(' & ')} — may not be this exact spot`;
+        caption.textContent = curated.length
+          ? (restSources.length ? `First photo verified for this spot · others via ${restSources.join(' & ')} may not be` : 'Photo verified for this spot')
+          : `Photos via ${restSources.join(' & ')} — may not be this exact spot`;
         gallery.after(caption);
       }).catch(() => gallery.remove());
     }
 
     let infoCardToken = 0;
 
-    function openInfoCard(kicker, title, buildBody, photoCoord) {
+    function openInfoCard(kicker, title, buildBody, photoCoord, curatedPhoto) {
       const token = ++infoCardToken;
       document.getElementById('info-kicker').textContent = kicker;
       document.getElementById('info-title').textContent = title || 'Untitled';
       const body = document.getElementById('info-body');
       body.innerHTML = '';
       buildBody(body);
-      if (photoCoord) attachPhotoGallery(body, photoCoord, token);
+      if (photoCoord) attachPhotoGallery(body, photoCoord, token, curatedPhoto);
       closeSheets();
       infoSheet.classList.add('open');
       scrim.classList.add('open');
@@ -997,7 +1008,11 @@
             if (link) { link.style.marginRight = '8px'; body.append(link); }
           });
         }
-      }, feature.geometry.coordinates);
+      }, feature.geometry.coordinates, props.photo_url ? {
+        url: props.photo_url,
+        creditLabel: props.photo_credit_label,
+        creditUrl: props.photo_credit_url,
+      } : null);
     }
 
     // gemLayerId is passed in separately from style-derived layers: the gem
