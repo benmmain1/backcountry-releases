@@ -812,12 +812,18 @@
       // default) is temporarily forced visible for the scan and restored
       // right after — the toggle is invisible to the user either way
       // since no frame renders in between.
-      const CAMP_GRID = 9;
+      // Precision knobs. Denser grid + finer/longer rays = closer to the
+      // true best spot in view, at the cost of scan time (still all
+      // synchronous local DEM lookups, no network, chunked with yields
+      // below so the UI doesn't freeze — just takes a few seconds longer
+      // for a deliberate, user-triggered scan rather than snappy).
+      const CAMP_GRID = 14; // 15x15 = 225 candidates, up from 100
       const MIN_SPACING_M = 150;
-      const RAY_COUNT = 8;
-      const RAY_MAX_M = 1200;
-      const RAY_STEP_M = 80;
+      const RAY_COUNT = 12; // 30° angular resolution, up from 45°
+      const RAY_MAX_M = 1500;
+      const RAY_STEP_M = 60; // finer distance resolution, catches thinner blocking ridges
       const ROUGHNESS_SAMPLE_DEG = 0.00025;
+      const MAX_RESULTS = 6;
       let scanResultsShown = false;
       let scanRequestToken = 0;
 
@@ -907,7 +913,7 @@
           if (roughness != null && openness != null && roughness <= 25) { // 25m+ swing is too uneven to pitch a tent
             scored.push({ ...c, roughness, openness, score: openness - roughness * 15 });
           }
-          if (idx % 5 === 0) await new Promise((r) => setTimeout(r, 0)); // ray-casting per candidate adds up — yield periodically
+          if (idx % 3 === 0) await new Promise((r) => setTimeout(r, 0)); // finer rays cost more per candidate now — yield more often
         }
         scored.sort((a, b) => b.score - a.score);
 
@@ -921,7 +927,7 @@
             return Math.hypot(dx, dy) < MIN_SPACING_M;
           });
           if (!tooClose) picked.push(c);
-          if (picked.length >= 5) break;
+          if (picked.length >= MAX_RESULTS) break;
         }
         return picked;
       }
@@ -982,7 +988,7 @@
         }
         const token = ++scanRequestToken;
         scanBtn.classList.add('active');
-        say('Scanning this view for camp-worthy ground…');
+        say('Scanning this view for camp-worthy ground — a thorough pass, can take a few seconds…');
         try {
           const results = await scanForCampSpots();
           if (token !== scanRequestToken) return; // user moved on before this finished
