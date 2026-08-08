@@ -34,6 +34,15 @@
       }
     },
     {
+      "id": "sky",
+      "type": "sky",
+      "paint": {
+        "sky-type": "atmosphere",
+        "sky-atmosphere-sun": [0.0, 90.0],
+        "sky-atmosphere-sun-intensity": 5
+      }
+    },
+    {
       "id": "satellite",
       "type": "raster",
       "source": "satellite",
