@@ -1558,45 +1558,107 @@
     function saveAISettings(s) { localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(s)); }
 
     // Same live curated_spots table the Gem Spots map layer reads —
-    // fetched once per session and reused, not the same request as the
-    // layer's own fetch (simplicity over sharing one in-flight promise).
-    let spotsContextPromise = null;
-    async function getSpotsContext() {
-      if (spotsContextPromise) return spotsContextPromise;
-      spotsContextPromise = (async () => {
+    // fetched once per session and reused as raw rows (not the same
+    // request as the layer's own fetch — simplicity over sharing one
+    // in-flight promise). The formatted context text is rebuilt per
+    // message instead of cached, since it depends on that message's
+    // query text and the active provider's token budget.
+    let spotsRowsPromise = null;
+    async function getSpotsRows() {
+      if (spotsRowsPromise) return spotsRowsPromise;
+      spotsRowsPromise = (async () => {
         try {
           const resp = await fetch(GEM_SPOTS_URL, {
             headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
           });
           if (!resp.ok) throw new Error(`Supabase fetch failed: ${resp.status}`);
-          const rows = await resp.json();
-          return rows.map((r) => [
-            `id:${r.id}`, `name:${r.name}`, `forest:${FOREST_NAMES[r.forest_unit_id] || r.forest_unit_id}`,
-            `coords:${r.lat},${r.lon} (${r.coordinate_confidence || 'unknown'} precision)`,
-            `elev_ft:${r.elevation_ft ?? '?'}`, `view_type:${(r.view_type || []).join(',')}`,
-            `camp_type:${(r.camp_type || []).join(',')}`, `access_type:${r.access_type || '?'}`,
-            `wilderness:${!!r.wilderness}`, `season:${r.best_season || '?'}`,
-            `why:${(r.description || '').replace(/\s+/g, ' ').slice(0, 300)}`,
-          ].join(' | ')).join('\n');
+          return await resp.json();
         } catch (err) {
-          console.warn('Could not load spots context for AI guide', err);
-          return '(spot database failed to load — answer from general knowledge only, and say so)';
+          console.warn('Could not load spots for AI guide', err);
+          return [];
         }
       })();
-      return spotsContextPromise;
+      return spotsRowsPromise;
+    }
+
+    // Shorter than FOREST_NAMES (drops "National Forest") purely to save
+    // tokens in a table sent on every request — FOREST_NAMES itself is
+    // used elsewhere in the UI and stays as-is.
+    const SHORT_FOREST = {
+      USFS_R04_FISHLAKE: 'Fishlake', USFS_R04_UWC: 'Uinta-Wasatch-Cache', USFS_R04_DIXIE: 'Dixie',
+      USFS_R04_ASHLEY: 'Ashley', USFS_R04_MANTI_LASAL: 'Manti-La Sal',
+    };
+    const SPOTS_TABLE_HEADER = 'name|forest|lat,lon|coord_precision|elev_ft|view_type|camp_type|access_type|wilderness(Y/N)|best_season|notes';
+    // Groq's free/on-demand tier caps some models at 12,000 tokens per
+    // MINUTE total — sending the full ~287-spot table (~35-38k tokens
+    // unabridged) blew straight through that on the very first message
+    // (confirmed against the live API: "Request too large... Limit
+    // 12000, Requested 38569"). Custom endpoints are unknown quantities,
+    // so treated just as conservatively. The big three providers have
+    // comfortably higher minimums, but still capped rather than
+    // uncapped, since token cost/latency scales with this regardless of
+    // provider and 287 spots will only grow over time.
+    const SPOTS_TOKEN_BUDGET = { anthropic: 20000, openai: 20000, google: 20000, groq: 6000, custom: 6000 };
+    const approxTokens = (s) => Math.ceil(s.length / 4); // rough chars/4 heuristic, not a real tokenizer
+
+    function spotSearchText(r) {
+      return [r.name, SHORT_FOREST[r.forest_unit_id], (r.view_type || []).join(' '), (r.camp_type || []).join(' '), r.description, r.best_season, r.access_type].join(' ').toLowerCase();
+    }
+    function spotLine(r) {
+      const conf = { precise: 'precise', approximate: 'approx', 'rough-area-only': 'rough-area' }[r.coordinate_confidence] || '?';
+      const notes = (r.description || '').replace(/\s+/g, ' ').trim().slice(0, 110);
+      return [
+        r.name, SHORT_FOREST[r.forest_unit_id] || r.forest_unit_id || '', `${(+r.lat).toFixed(3)},${(+r.lon).toFixed(3)}`, conf,
+        r.elevation_ft || '', (r.view_type || []).join(','), (r.camp_type || []).join(','),
+        r.access_type || '', r.wilderness ? 'Y' : 'N', r.best_season || '', notes,
+      ].join('|');
+    }
+
+    // Ranks spots by keyword overlap with the user's actual question so
+    // the ones most likely relevant survive the token budget, instead of
+    // shrinking every row equally thin to force-fit all 287. Falls back
+    // to original order when nothing matches (e.g. an image-only
+    // message with no text query yet).
+    function buildSpotsContext(rows, queryText, tokenBudget) {
+      if (!rows.length) return '(spot database failed to load — answer from general knowledge only, and say so)';
+      const qWords = (queryText || '').toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+      const scored = rows.map((r) => {
+        const hay = spotSearchText(r);
+        return { r, score: qWords.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0) };
+      });
+      const ordered = scored.some((s) => s.score > 0) ? scored.sort((a, b) => b.score - a.score).map((s) => s.r) : rows;
+
+      const lines = [];
+      let used = approxTokens(SPOTS_TABLE_HEADER);
+      let omitted = 0;
+      for (const r of ordered) {
+        const line = spotLine(r);
+        const cost = approxTokens(line) + 1;
+        if (used + cost > tokenBudget) { omitted++; continue; }
+        lines.push(line);
+        used += cost;
+      }
+      let text = `${SPOTS_TABLE_HEADER}\n${lines.join('\n')}`;
+      if (omitted) text += `\n(+${omitted} more spots in the database exist but aren't shown here for length — if the user names a specific area/forest not covered above, say the database has more than fits in one lookup rather than assuming it's absent)`;
+      return text;
+    }
+
+    async function getSpotsContextFor(queryText, provider) {
+      const rows = await getSpotsRows();
+      return buildSpotsContext(rows, queryText, SPOTS_TOKEN_BUDGET[provider] ?? 6000);
     }
 
     function aiSystemPrompt(spotsText) {
-      return `You are the Backcountry AI Trail Guide — an expert on dispersed and backcountry camping in Utah. You have a database of real, curated spots below (pipe-delimited fields per line), pulled live from this app's own recommendation database.
+      return `You are the Backcountry AI Trail Guide — an expert on dispersed and backcountry camping in Utah. Below is a table of real, curated spots (pipe-delimited, one per line, column order given in the header row), pulled live from this app's own recommendation database. It may only be a relevant subset of the full database, not necessarily everything that exists — see the note at the end of the table if some were left out.
 
 Rules:
-- Prefer recommending spots from the database below. Always cite the exact "name" field when you do, plus its access_type, view_type, and coordinate precision, since those determine if it's actually reachable and how exact the location is.
-- If the user uploads a reference photo, first describe in a sentence or two what you see in it (terrain type, how open/framed the view is, alpine vs. desert vs. forest, water features, elevation cues) — then match that against the database's view_type/camp_type/why fields.
-- If nothing in the database is a good match for what they're asking or what's in their photo, you may suggest a general area or type of location from your own knowledge that's likely to have something similar — but you MUST prefix any such suggestion with "⚠️ Unverified lead (not in our database):" and never invent precise-looking GPS coordinates or claim it as a confirmed real spot. Describe it by drainage/trailhead/area name instead, and tell the user to verify access, legality, and conditions themselves (official land-manager site, recent trip reports) before treating it as a real plan.
+- Prefer recommending spots from the table below. Always cite the exact "name" column when you do, plus its access_type, view_type, and coord_precision, since those determine if it's actually reachable and how exact the location is.
+- If the user uploads a reference photo, first describe in a sentence or two what you see in it (terrain type, how open/framed the view is, alpine vs. desert vs. forest, water features, elevation cues) — then match that against the table's view_type/camp_type/notes columns.
+- If nothing in the table is a good match for what they're asking or what's in their photo, you may suggest a general area or type of location from your own knowledge that's likely to have something similar — but you MUST prefix any such suggestion with "⚠️ Unverified lead (not in our database):" and never invent precise-looking GPS coordinates or claim it as a confirmed real spot. Describe it by drainage/trailhead/area name instead, and tell the user to verify access, legality, and conditions themselves (official land-manager site, recent trip reports) before treating it as a real plan.
 - Keep answers focused and practical. Use a short list when comparing multiple spots.
 - Always remind users conditions (fire restrictions, road closures, seasonal access) change and should be checked with the land manager before heading out.
 
-SPOT DATABASE:
+SPOT TABLE:
 ${spotsText}`;
     }
 
@@ -1850,7 +1912,7 @@ ${spotsText}`;
         messagesEl.scrollTop = messagesEl.scrollHeight;
 
         try {
-          const spotsText = await getSpotsContext();
+          const spotsText = await getSpotsContextFor(text, settings.provider);
           const reply = await callAIProvider(settings, aiSystemPrompt(spotsText), history);
           typing.remove();
           addBubble('assistant', reply || '(empty response)');
