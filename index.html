@@ -457,7 +457,8 @@
     </details>
     <div class="field" id="ai-websearch-field">
       <label class="ai-checkbox-row"><input type="checkbox" id="ai-websearch-input" /> Let it search the web for obscure/specific places</label>
-      <p class="hint">Off by default to keep this free. When a place isn't in our spot database and isn't something well-known, the AI normally has to guess from memory — this lets it actually look it up instead, at a small real cost (~1¢ per 100 searches) charged to your API key on top of normal usage.</p>
+      <p class="hint">Off by default to keep this free. When a place isn't in our spot database and isn't something well-known, the AI normally has to guess from memory — this lets it actually look it up instead.</p>
+      <p class="hint" id="ai-websearch-cost-hint"></p>
     </div>
     <p class="hint" id="ai-settings-error"></p>
     <button type="button" class="save-btn" id="ai-settings-save">Save</button>
@@ -1559,10 +1560,16 @@
     // key. No proxy/backend needed, and the key never touches anything
     // we run.
     const AI_PROVIDERS = {
-      anthropic: { label: 'Claude (Anthropic)', defaultModel: 'claude-sonnet-5', hint: 'e.g. claude-sonnet-5, claude-opus-5, claude-haiku-4-5-20251001', needsBaseUrl: false, keyUrl: 'https://console.anthropic.com/settings/keys' },
+      anthropic: {
+        label: 'Claude (Anthropic)', defaultModel: 'claude-sonnet-5', hint: 'e.g. claude-sonnet-5, claude-opus-5, claude-haiku-4-5-20251001', needsBaseUrl: false, keyUrl: 'https://console.anthropic.com/settings/keys',
+        webSearchCostHint: 'Verified against Anthropic\'s docs: costs $10 per 1,000 searches on top of normal token usage, charged to your key.',
+      },
       openai: { label: 'ChatGPT (OpenAI)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false, keyUrl: 'https://platform.openai.com/api-keys' },
       google: { label: 'Gemini (Google)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
-      groq: { label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use llama-3.2-11b-vision-preview if you want image upload to work', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys' },
+      groq: {
+        label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use llama-3.2-11b-vision-preview if you want image upload to work', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys',
+        webSearchCostHint: 'Switches to Groq\'s "compound" system (web search, code execution, more) for this account. Their docs don\'t publish exact pricing/rate limits for it separately from normal models — check console.groq.com/settings/billing after enabling if that matters to you.',
+      },
       custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Grok, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
     };
     const AI_SETTINGS_KEY = 'bc_ai_settings';
@@ -1773,8 +1780,15 @@ ${spotsText}`;
           return callAnthropic(settings, system, internalMessages);
         case 'openai':
           return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.openai.com/v1/chat/completions');
-        case 'groq':
-          return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.groq.com/openai/v1/chat/completions');
+        case 'groq': {
+          // groq/compound is Groq's own tool-using system (web search,
+          // code execution, more) — same endpoint/request shape as a
+          // normal model, just a different model string, so swap it in
+          // for this call only rather than overwriting the user's saved
+          // model choice.
+          const groqSettings = settings.webSearch ? { ...settings, model: 'groq/compound' } : settings;
+          return callOpenAICompatible(groqSettings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.groq.com/openai/v1/chat/completions');
+        }
         case 'custom':
           if (!settings.baseUrl) throw new Error('Base URL is required for a custom provider');
           return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), settings.baseUrl);
@@ -1810,6 +1824,7 @@ ${spotsText}`;
       const keyLink = document.getElementById('ai-key-link');
       const webSearchField = document.getElementById('ai-websearch-field');
       const webSearchInput = document.getElementById('ai-websearch-input');
+      const webSearchCostHint = document.getElementById('ai-websearch-cost-hint');
       const advancedDetails = document.getElementById('ai-advanced');
       const settingsError = document.getElementById('ai-settings-error');
       const settingsSave = document.getElementById('ai-settings-save');
@@ -1835,11 +1850,12 @@ ${spotsText}`;
         if (cfg.keyUrl) { keyLink.href = cfg.keyUrl; keyLink.style.display = ''; }
         else keyLink.style.display = 'none';
         if (cfg.needsBaseUrl) advancedDetails.open = true;
-        // Only verified working against Anthropic's API so far — other
-        // providers have their own similar tools, but each needs checking
-        // against the live API before being offered here, same as every
-        // other assumption that turned out wrong tonight without checking.
-        webSearchField.classList.toggle('show', providerId === 'anthropic');
+        // Only shown for providers whose search mechanism has actually
+        // been checked against their real API/docs — OpenAI and Google
+        // both turned out to need a different endpoint entirely than the
+        // one this app calls, so they're left out rather than guessed at.
+        webSearchField.classList.toggle('show', !!cfg.webSearchCostHint);
+        webSearchCostHint.textContent = cfg.webSearchCostHint || '';
       }
 
       function fillSettingsForm() {
@@ -1890,7 +1906,7 @@ ${spotsText}`;
         if (!model) { settingsError.textContent = 'Open "Advanced" and enter a model name for this provider.'; advancedDetails.open = true; return; }
 
         settingsError.textContent = '';
-        settings = { provider, apiKey, model, baseUrl, webSearch: provider === 'anthropic' && webSearchInput.checked };
+        settings = { provider, apiKey, model, baseUrl, webSearch: !!AI_PROVIDERS[provider].webSearchCostHint && webSearchInput.checked };
         saveAISettings(settings);
         refreshChatVisibility();
         closeSheets();
