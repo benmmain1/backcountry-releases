@@ -102,6 +102,7 @@
     font-size: 13.5px; font-weight: 700; cursor: pointer;
   }
   .panel-btn:disabled { opacity: 0.55; cursor: default; }
+  .panel-btn.secondary { background: var(--border); color: var(--text); }
   #elevation-readout {
     background: rgba(20,22,18,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700;
@@ -124,6 +125,16 @@
     transform: translateY(100%); transition: transform .2s ease;
   }
   .sheet.open { transform: translateY(0); }
+  /* Belt-and-suspenders: a closed sheet is already off-screen via the
+     transform above, which should be enough on its own — but something
+     was letting a closed sheet still occupy page layout and intercept
+     taps (multiple sheets stacking in normal scroll instead of properly
+     overlaying/hiding), and this couldn't be reproduced or root-caused
+     directly (no live browser access from here to inspect the actual
+     DOM/computed styles). !important here forcibly rules out an entire
+     class of "closed but still there" bugs regardless of what's actually
+     causing it, at the cost of the slide-in animation no longer playing. */
+  .sheet:not(.open) { display: none !important; }
   .sheet .grabber { width: 36px; height: 4px; border-radius: 4px; background: var(--border); margin: 10px auto 12px; }
   .sheet h1 { font-size: 17px; margin: 0 0 10px; }
   .sheet p { margin: 0 0 10px; color: var(--muted); font-size: 13.5px; }
@@ -174,6 +185,30 @@
   #regions-body .region-row .go { color: var(--muted); flex: none; }
   #regions-body .empty { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
 
+  /* ---- Search sheet: find a peak/trail/spot by name, then jump there ---- */
+  #search-input {
+    width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 15px; margin-bottom: 8px;
+  }
+  #search-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #search-results .result-row {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 11px 4px; border-top: 1px solid var(--border);
+    background: none; border-left: none; border-right: none; border-bottom: none;
+    text-align: left; cursor: pointer; color: inherit;
+  }
+  #search-results .result-row:first-child { border-top: none; }
+  #search-results .result-icon {
+    flex: none; width: 32px; height: 32px; border-radius: 9px; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #search-results .result-info { flex: 1; min-width: 0; }
+  #search-results .result-name { font-size: 14.5px; font-weight: 700; }
+  #search-results .result-kind { font-size: 12px; color: var(--muted); }
+  #search-results .empty, #search-results .loading { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
+  #search-results .group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; margin: 12px 0 2px; }
+  #search-results .group-label:first-child { margin-top: 4px; }
+
   /* ---- Coverage pins: mark regions with data when zoomed out to find them ---- */
   .region-pin {
     display: flex; align-items: center; gap: 7px;
@@ -216,6 +251,12 @@
   .info-badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--border); white-space: nowrap; }
   .info-badge.status-open { background: rgba(63,125,84,.16); color: var(--accent); }
   .info-badge.status-closed { background: rgba(200,40,30,.14); color: #c8281e; }
+  .info-badge.status-watch { background: rgba(224,176,115,.22); color: #a8712a; }
+  .info-badge.status-danger { background: rgba(200,40,30,.16); color: #c8281e; }
+  .wildfire-note { background: rgba(200,40,30,.1); border: 1px solid rgba(200,40,30,.25); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+  .wildfire-note.watch { background: rgba(224,176,115,.14); border-color: rgba(224,176,115,.4); }
+  .wildfire-note p { margin: 0; color: var(--text); font-size: 13px; }
+  .satellite-thumb { display: block; width: 100%; height: 160px; object-fit: cover; border-radius: 10px; margin: 2px 0 12px; background: var(--border); }
   .info-facts { display: flex; flex-direction: column; }
   .info-facts .fact-row {
     display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px;
@@ -231,6 +272,93 @@
     padding: 9px 15px; background: var(--border); color: var(--text);
     text-decoration: none; font-weight: 700; font-size: 13.5px; border-radius: 999px;
   }
+  #info-ask-ai {
+    display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%;
+    margin: 2px 0 14px; padding: 11px; border: none; border-radius: 12px;
+    background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 14px; cursor: pointer;
+  }
+
+  /* ---- AI Trail Guide ---- */
+  #ai-sheet { display: flex; flex-direction: column; }
+  #ai-sheet .info-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  #ai-sheet .info-head h1 { margin: 0; flex: 1; }
+  #ai-sheet .ai-icon-btn {
+    flex: none; width: 30px; height: 30px; border: none; background: var(--border);
+    border-radius: 50%; cursor: pointer; color: var(--text);
+    display: flex; align-items: center; justify-content: center;
+  }
+  @media (min-width: 640px) { #ai-sheet { width: 380px; max-height: min(640px, 82vh); } }
+  #ai-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px 0 10px; min-height: 120px; }
+  .ai-msg { max-width: 88%; padding: 9px 13px; border-radius: 14px; font-size: 13.5px; white-space: pre-line; }
+  .ai-msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+  .ai-msg.assistant { align-self: flex-start; background: var(--border); border-bottom-left-radius: 4px; }
+  .ai-msg.error { align-self: stretch; background: rgba(200,40,30,.14); color: #c8281e; }
+  .ai-msg img.ai-msg-image { display: block; width: 100%; max-width: 220px; border-radius: 10px; margin-bottom: 6px; }
+  .ai-msg .ai-spot-link {
+    display: inline; border: none; background: none; padding: 0; margin: 0;
+    color: var(--accent); font: inherit; font-weight: 700; text-decoration: underline;
+    text-underline-offset: 2px; cursor: pointer;
+  }
+  .ai-msg .ai-unverified { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--muted); font-size: 12px; color: var(--muted); }
+  .ai-suggestions { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+  .ai-suggestions button {
+    text-align: left; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: none; color: var(--text); font-size: 13px; cursor: pointer;
+  }
+  .ai-typing { align-self: flex-start; color: var(--muted); font-size: 13px; padding: 4px 13px; }
+  #ai-image-preview { display: none; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 8px; background: var(--border); border-radius: 10px; }
+  #ai-image-preview.show { display: flex; }
+  #ai-image-preview img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; flex: none; }
+  #ai-image-preview .name { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #ai-image-preview button { flex: none; border: none; background: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 2px 6px; }
+  #ai-input-row { display: flex; align-items: flex-end; gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+  #ai-text-input {
+    flex: 1; resize: none; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    border-radius: 12px; padding: 9px 12px; font: inherit; font-size: 13.5px; max-height: 90px;
+  }
+  #ai-input-row button { flex: none; }
+  #ai-send-btn, #ai-upload-btn {
+    width: 36px; height: 36px; border: none; border-radius: 50%; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #ai-upload-btn { background: var(--border); color: var(--text); }
+  #ai-send-btn { background: var(--accent); color: var(--accent-ink); }
+  #ai-send-btn:disabled { opacity: .5; cursor: default; }
+  #ai-not-configured { text-align: center; padding: 18px 4px; }
+  #ai-not-configured button {
+    margin-top: 10px; padding: 10px 18px; background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: 999px; font-weight: 700; font-size: 13.5px; cursor: pointer;
+  }
+
+  #ai-settings-sheet .field { margin-bottom: 12px; }
+  #ai-settings-sheet label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  #ai-settings-sheet select, #ai-settings-sheet input {
+    width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px;
+  }
+  #ai-settings-sheet .hint { font-size: 11.5px; color: var(--muted); margin: 4px 0 0; }
+  #ai-settings-sheet .hint a { color: var(--accent); font-weight: 700; text-decoration: none; }
+  #ai-settings-sheet .save-btn {
+    width: 100%; margin-top: 4px; padding: 11px; background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: 999px; font-weight: 700; font-size: 14px; cursor: pointer;
+  }
+  #ai-advanced { margin-bottom: 12px; }
+  #ai-advanced summary { font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; padding: 4px 0; }
+  #ai-advanced .field:first-of-type { margin-top: 10px; }
+  .ai-url-quickfill { display: flex; gap: 6px; margin-top: 6px; }
+  .ai-url-quickfill button {
+    flex: 1; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border); background: none;
+    color: var(--accent); font-weight: 700; font-size: 12px; cursor: pointer;
+  }
+  #ai-websearch-field { display: none; }
+  #ai-websearch-field.show { display: block; }
+  #ai-websearch-field .ai-checkbox-row {
+    display: flex; align-items: center; gap: 8px; text-transform: none;
+    font-size: 13.5px; font-weight: 600; color: var(--text); letter-spacing: normal; margin-bottom: 4px;
+  }
+  #ai-websearch-field .ai-checkbox-row input { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+  #ai-settings-error { color: #c8281e; min-height: 0; }
+  #ai-settings-error:empty { display: none; margin: 0; }
 
   #status {
     position: absolute; bottom: 12px; left: 12px; z-index: 2;
@@ -273,6 +401,9 @@
     <button id="recenter-btn" type="button" class="chrome-btn" title="Recenter">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round"/></svg>
     </button>
+    <button id="search-btn" type="button" class="chrome-btn" title="Search hikes, trails &amp; peaks">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    </button>
     <button id="basemap-btn" type="button" class="chrome-btn" title="Switch to topo map">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>
     </button>
@@ -282,6 +413,9 @@
     <button id="scan-btn" type="button" class="chrome-btn" title="Find campsite spots (needs 3D on)">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 2.9 6.3L21 9l-4.9 4.5L17.4 20 12 16.8 6.6 20l1.3-6.5L3 9l6.1-.7Z"/></svg>
     </button>
+    <button id="ai-btn" type="button" class="chrome-btn" title="AI Trail Guide">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
   </div>
 
   <div id="elevation-hud">
@@ -290,7 +424,6 @@
       <button type="button" class="unit-btn" data-unit="metric">Metric</button>
     </div>
     <div id="elevation-readout">—</div>
-  </div>
 
   <div id="about-sheet" class="sheet">
     <div class="grabber"></div>
@@ -315,6 +448,14 @@
     <div id="regions-body"></div>
   </div>
 
+  <div id="search-sheet" class="sheet">
+    <div class="grabber"></div>
+    <h1>Find a Hike, Trail, or Peak</h1>
+    <input type="search" id="search-input" placeholder="Search a peak, trail, or camp spot…" autocomplete="off" />
+    <p id="search-hint" class="meta">Search named peaks, trails &amp; landmarks (Wikidata), our recommended camp spots, plus anything already loaded on screen.</p>
+    <div id="search-results"></div>
+  </div>
+
   <div id="info-sheet" class="sheet">
     <div class="grabber"></div>
     <div class="info-head">
@@ -327,7 +468,104 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
+    <button id="info-ask-ai" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg>
+      Ask AI about this spot
+    </button>
     <div id="info-body"></div>
+  </div>
+
+  <div id="ai-sheet" class="sheet">
+    <div class="grabber"></div>
+    <div class="info-head">
+      <h1>AI Trail Guide</h1>
+      <button id="ai-settings-btn" type="button" class="ai-icon-btn" title="AI settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      </button>
+      <button id="ai-close" type="button" class="ai-icon-btn" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
+    <div id="ai-not-configured">
+      <p>Bring your own API key (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible endpoint like Groq) to ask about real spots in this app — or upload a reference photo and get matched to the closest ones.</p>
+      <button id="ai-setup-btn" type="button">Set up AI Guide</button>
+    </div>
+
+    <div id="ai-chat" style="display:none">
+      <div id="ai-messages"></div>
+      <div class="ai-suggestions" id="ai-suggestions">
+        <button type="button" data-q="Best alpine lake spot reachable in a sedan">Best alpine lake spot reachable in a sedan</button>
+        <button type="button" data-q="Somewhere with a wide open valley view, easy access">Somewhere with a wide open valley view, easy access</button>
+        <button type="button" data-q="Good dispersed camping spot for October">Good dispersed camping spot for October</button>
+        <button type="button" data-q="I don't like the spots you have — find something more unique near where I'm looking, using the live scanner">Find something unique near here (uses the live scanner)</button>
+      </div>
+      <div id="ai-image-preview">
+        <img id="ai-image-preview-img" alt="" />
+        <span class="name" id="ai-image-preview-name"></span>
+        <button type="button" id="ai-image-remove" title="Remove image">×</button>
+      </div>
+      <div id="ai-input-row">
+        <input type="file" id="ai-image-input" accept="image/*" style="display:none" />
+        <button type="button" id="ai-upload-btn" title="Upload a reference photo">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
+        <textarea id="ai-text-input" rows="1" placeholder="Ask about a spot, or describe what you want…"></textarea>
+        <button type="button" id="ai-send-btn" title="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ai-settings-sheet" class="sheet">
+    <div class="grabber"></div>
+    <div class="info-head">
+      <h1>AI Guide Settings</h1>
+      <button id="ai-settings-close" type="button" class="ai-icon-btn" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p>Paste in an API key from any of these to turn on the AI guide. Your key stays in this browser and goes straight to whichever one you pick — it never passes through our servers.</p>
+    <div class="field">
+      <label for="ai-provider-select">Which AI</label>
+      <select id="ai-provider-select">
+        <option value="anthropic">Claude (Anthropic)</option>
+        <option value="openai">ChatGPT (OpenAI)</option>
+        <option value="google">Gemini (Google)</option>
+        <option value="groq">Groq</option>
+        <option value="custom">Other (Grok, Together, Ollama, etc.)</option>
+      </select>
+      <p class="hint"><a id="ai-key-link" href="#" target="_blank" rel="noopener noreferrer">Get a free key ↗</a></p>
+    </div>
+    <div class="field">
+      <label for="ai-key-input">API Key</label>
+      <input type="password" id="ai-key-input" autocomplete="off" placeholder="Paste your key here" />
+    </div>
+    <details id="ai-advanced">
+      <summary>Advanced (usually not needed)</summary>
+      <div class="field" id="ai-base-url-field">
+        <label for="ai-base-url-input">Base URL</label>
+        <input type="text" id="ai-base-url-input" placeholder="https://api.groq.com/openai/v1/chat/completions" />
+        <p class="hint">Required if you picked "Other" above — the API address for that service. Easy to mistype by hand, so tap one instead if it's one of these:</p>
+        <div class="ai-url-quickfill">
+          <button type="button" data-url="https://api.groq.com/openai/v1/chat/completions">Use Groq</button>
+          <button type="button" data-url="https://api.x.ai/v1/chat/completions">Use Grok (xAI)</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="ai-model-input">Model name</label>
+        <input type="text" id="ai-model-input" placeholder="claude-sonnet-5" />
+        <p class="hint" id="ai-model-hint"></p>
+      </div>
+    </details>
+    <div class="field" id="ai-websearch-field">
+      <label class="ai-checkbox-row"><input type="checkbox" id="ai-websearch-input" /> Let it search the web for obscure/specific places</label>
+      <p class="hint">Off by default to keep this free. When a place isn't in our spot database and isn't something well-known, the AI normally has to guess from memory — this lets it actually look it up instead.</p>
+      <p class="hint" id="ai-websearch-cost-hint"></p>
+    </div>
+    <p class="hint" id="ai-settings-error"></p>
+    <button type="button" class="save-btn" id="ai-settings-save">Save</button>
   </div>
 
   <div id="status"><span class="dot"></span><span id="status-text">Loading map…</span></div>
@@ -356,6 +594,7 @@
     const titlePill = document.getElementById('title-pill');
     const layersBtn = document.getElementById('layers-btn');
     const regionsBtn = document.getElementById('regions-btn');
+    const searchBtn = document.getElementById('search-btn');
     const recenterBtn = document.getElementById('recenter-btn');
     const basemapBtn = document.getElementById('basemap-btn');
     const terrainBtn = document.getElementById('terrain-btn');
@@ -363,10 +602,15 @@
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
     const regionsSheet = document.getElementById('regions-sheet');
+    const searchSheet = document.getElementById('search-sheet');
     const infoSheet = document.getElementById('info-sheet');
     const infoCloseBtn = document.getElementById('info-close');
     const scrim = document.getElementById('scrim');
     const regionLabel = document.getElementById('region-label');
+    const aiBtn = document.getElementById('ai-btn');
+    const aiSheet = document.getElementById('ai-sheet');
+    const aiSettingsSheet = document.getElementById('ai-settings-sheet');
+    const aiCloseBtn = document.getElementById('ai-close');
 
     function closeSheets() {
       aboutSheet.classList.remove('open');
@@ -374,7 +618,12 @@
       layersBtn.classList.remove('active');
       regionsSheet.classList.remove('open');
       regionsBtn.classList.remove('active');
+      searchSheet.classList.remove('open');
+      searchBtn.classList.remove('active');
       infoSheet.classList.remove('open');
+      aiSheet.classList.remove('open');
+      aiBtn.classList.remove('active');
+      aiSettingsSheet.classList.remove('open');
       scrim.classList.remove('open');
     }
     function toggleSheet(sheet, btn) {
@@ -390,7 +639,13 @@
     titlePill.onclick = () => toggleSheet(aboutSheet, menuBtn);
     layersBtn.onclick = () => toggleSheet(layersSheet, layersBtn);
     regionsBtn.onclick = () => toggleSheet(regionsSheet, regionsBtn);
+    searchBtn.onclick = () => {
+      toggleSheet(searchSheet, searchBtn);
+      if (searchSheet.classList.contains('open')) document.getElementById('search-input').focus();
+    };
     infoCloseBtn.onclick = closeSheets;
+    aiBtn.onclick = () => toggleSheet(aiSheet, aiBtn);
+    aiCloseBtn.onclick = closeSheets;
     scrim.onclick = closeSheets;
 
     // Plain-language layer groups. Colors here double as the legend —
@@ -476,6 +731,7 @@
         hash: true,
         attributionControl: { compact: true },
       });
+      mapRef = map; // exposes the map instance to the AI guide, which is set up outside start()
 
       map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), 'bottom-right');
       const scaleControl = new maplibregl.ScaleControl({ unit: 'imperial' });
@@ -555,12 +811,14 @@
           map.easeTo({ pitch: Math.min(55, pitchCeilingForZoom()), bearing: -20, duration: 900 });
           elevationHud.classList.add('visible');
           updateElevationReadout();
-          updateLandmarks();
         } else {
           map.easeTo({ pitch: 0, bearing: 0, duration: 700 });
           elevationHud.classList.remove('visible');
-          setLandmarksVisible(false);
         }
+        // Peak/place labels stay on in both 2D and 3D — only the
+        // elevation figure in a peak's label depends on terrain mode, so
+        // refresh now to add/drop it rather than waiting for the next pan.
+        updateLandmarks();
       }
       terrainBtn.onclick = () => setTerrainMode(!terrainOn);
 
@@ -585,8 +843,10 @@
       }
       map.on('moveend', updateElevationReadout);
 
-      // Peak and place-name labels, placed directly on the terrain
-      // instead of a plain elevation-only marker. This tileset has no
+      // Peak and place-name labels — shown over the satellite/topo
+      // basemap at any time, not just once 3D terrain is switched on
+      // (elevation alongside the name is 3D-only, since absoluteElevation()
+      // needs the displaced terrain mesh — see below). This tileset has no
       // named-summit dataset of its own (only contour lines carry
       // elevation — checked directly against the live archive), so names
       // come from Wikidata's public SPARQL endpoint: free, keyless, and
@@ -598,7 +858,7 @@
       // feet, no reliable way to tell which from the query alone), so
       // only the name + coordinate come from Wikidata — elevation is
       // computed from this app's own already-verified DEM instead, via
-      // absoluteElevation().
+      // absoluteElevation(), when it's available.
       const WIKIDATA_ENDPOINT = 'https://query.wikidata.org/sparql';
       const MAX_PEAKS_SHOWN = 6;
       const MAX_PLACES_SHOWN = 6;
@@ -722,10 +982,8 @@
       let landmarkRequestToken = 0;
       let landmarkDebounce = null;
       function updateLandmarks() {
-        if (!terrainOn) return;
         clearTimeout(landmarkDebounce);
         landmarkDebounce = setTimeout(async () => {
-          if (!terrainOn) return;
           // A whole-region view makes for a slow, low-value query (way
           // more candidates than fit on screen) — skip it until zoomed
           // in enough that "nearby peaks and places" is a meaningful ask.
@@ -737,14 +995,23 @@
           const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
           const token = ++landmarkRequestToken;
           const { peaks, places } = await fetchLandmarks(bbox);
-          if (token !== landmarkRequestToken || !terrainOn) return; // view (or mode) moved on before this resolved
+          if (token !== landmarkRequestToken) return; // view moved on before this resolved
 
           const center = map.getCenter();
-          const shownPeaks = peaks
-            .map((p) => ({ ...p, elevation: absoluteElevation([p.lng, p.lat]) }))
-            .filter((p) => p.elevation != null)
-            .sort((a, b) => b.elevation - a.elevation)
-            .slice(0, MAX_PEAKS_SHOWN);
+          // Elevation needs the displaced terrain mesh (absoluteElevation
+          // reads map.terrain, which only exists once setTerrain() is
+          // active) — in flat 2D, rank by distance from center instead of
+          // by height, and the label just drops the elevation line below.
+          const shownPeaks = terrainOn
+            ? peaks
+                .map((p) => ({ ...p, elevation: absoluteElevation([p.lng, p.lat]) }))
+                .filter((p) => p.elevation != null)
+                .sort((a, b) => b.elevation - a.elevation)
+                .slice(0, MAX_PEAKS_SHOWN)
+            : peaks
+                .map((p) => ({ ...p, dist: Math.hypot(p.lng - center.lng, p.lat - center.lat) }))
+                .sort((a, b) => a.dist - b.dist)
+                .slice(0, MAX_PEAKS_SHOWN);
           const shownPlaces = places
             .map((p) => ({ ...p, dist: Math.hypot(p.lng - center.lng, p.lat - center.lat) }))
             .sort((a, b) => a.dist - b.dist)
@@ -756,7 +1023,7 @@
             features: [
               ...shownPeaks.map((p) => ({
                 type: 'Feature',
-                properties: { kind: 'peak', label: `${p.name}\n${formatElevation(p.elevation)}` },
+                properties: { kind: 'peak', label: p.elevation != null ? `${p.name}\n${formatElevation(p.elevation)}` : p.name },
                 geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
               })),
               ...shownPlaces.map((p) => ({
@@ -1016,18 +1283,22 @@
       }
 
       let lastScanResults = new Map(); // scanId -> result, for the click-to-open card
+      // Plain-text summary of the last scan's results, refreshed each run —
+      // fed to the AI Trail Guide (see aiSystemPrompt) so it can reason
+      // about real, freshly-scanned terrain candidates in view instead of
+      // only the pre-curated spot table, without inventing new coordinates
+      // of its own.
+      let lastScanContextText = '';
 
-      scanBtn.onclick = async () => {
-        if (!terrainOn) {
-          say('Turn on 3D terrain first — spot-finding reads real elevation data off the terrain mesh', 'warn');
-          return;
-        }
-        if (scanResultsShown) {
-          setCampSpotsVisible(false);
-          scanResultsShown = false;
-          scanBtn.classList.remove('active');
-          return;
-        }
+      function formatOpenness(meters) {
+        return elevationUnit === 'imperial' ? `${Math.round(meters * 3.28084).toLocaleString()} ft` : `${Math.round(meters).toLocaleString()} m`;
+      }
+
+      // Shared by the star-button toggle and by "Find a camp spot near
+      // here" (search results / AI handoff) — runs the real terrain scan
+      // over whatever's currently in view and renders the results, without
+      // the scanBtn-specific show/hide-toggle behavior wrapped around it.
+      async function runCampScan() {
         const token = ++scanRequestToken;
         scanBtn.classList.add('active');
         const activePrefs = [...spotFilterState.view, ...spotFilterState.camp];
@@ -1036,7 +1307,7 @@
           : 'Scanning this view for camp-worthy ground — a thorough pass, can take a few seconds…');
         try {
           const results = await scanForCampSpots();
-          if (token !== scanRequestToken) return; // user moved on before this finished
+          if (token !== scanRequestToken) return false; // user moved on before this finished
 
           lastScanResults.clear();
           ensureCampSpotLayers();
@@ -1050,7 +1321,7 @@
                 type: 'Feature',
                 properties: {
                   scanId,
-                  label: `#${idx + 1} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${elevationUnit === 'imperial' ? Math.round(c.openness * 3.28084).toLocaleString() + ' ft' : Math.round(c.openness).toLocaleString() + ' m'}${tags ? `\n${tags}` : ''}`,
+                  label: `#${idx + 1} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${formatOpenness(c.openness)}${tags ? `\n${tags}` : ''}`,
                 },
                 geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
               };
@@ -1060,13 +1331,280 @@
           scanResultsShown = true;
           say(results.length
             ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping. Tap a pin for details.`
-            : 'No candidates matched in this view — try loosening your Scan Preferences, or pan over USFS/BLM land near a dispersed-camping route');
+            : 'No candidates matched in this view — try loosening your Scan Preferences, pan over USFS/BLM land near a dispersed-camping route, or ask the AI Trail Guide (if set up) what to try next');
+
+          lastScanContextText = results.length
+            ? 'scan_id|elevation_ft|open_view_ft|wooded(Y/N)|near_water(Y/N)|lat,lon\n' + results.map((c) => {
+                const scanId = `scan-${c.lng.toFixed(5)}-${c.lat.toFixed(5)}`;
+                const elevFt = Math.round((absoluteElevation([c.lng, c.lat]) || 0) * 3.28084);
+                const openFt = Math.round(c.openness * 3.28084);
+                return [scanId, elevFt, openFt, c.wooded ? 'Y' : 'N', c.nearWater ? 'Y' : 'N', `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`].join('|');
+              }).join('\n')
+            : '';
+          lastScanContextTextRef = lastScanContextText;
+          return results.length > 0;
         } catch (err) {
           console.error('Camp spot scan failed', err);
           say('Spot scan failed — try again', 'error');
           scanBtn.classList.remove('active');
+          return false;
         }
+      }
+
+      scanBtn.onclick = async () => {
+        if (!terrainOn) {
+          say('Turn on 3D terrain first — spot-finding reads real elevation data off the terrain mesh', 'warn');
+          return;
+        }
+        if (scanResultsShown) {
+          setCampSpotsVisible(false);
+          scanResultsShown = false;
+          scanBtn.classList.remove('active');
+          return;
+        }
+        await runCampScan();
       };
+
+      // Search-driven handoff: jump to a searched hike/trail/peak, make
+      // sure 3D terrain (which the scanner reads elevation off of) is on,
+      // wait for that area's tiles/DEM to actually finish loading, then
+      // run the same real scan the star button runs — "find me a camp
+      // spot near this place" end to end.
+      async function findCampSpotNear([lng, lat], label) {
+        closeSheets();
+        if (!terrainOn) setTerrainMode(true);
+        map.stop();
+        map.flyTo({ center: [lng, lat], zoom: 13.6, duration: 900 });
+        say(`Looking for camp spots near ${label || 'this location'}…`, 'warn');
+        await new Promise((resolve) => map.once('idle', resolve));
+        const found = await runCampScan();
+        if (!found) {
+          say(`No candidates near ${label || 'this spot'} yet — try the AI Trail Guide, or loosen Scan Preferences and try again`, 'warn');
+        }
+      }
+      findCampSpotNearFn = findCampSpotNear; // exposes it to the card-builder functions defined at top level
+
+      // ---- Search: find a named peak/trail/landmark or a recommended
+      // camp spot by name, then jump straight there. Three real sources,
+      // each with a real gap that's stated honestly rather than papered
+      // over (see the group labels below and MapLibre's own zoomed-out
+      // limits), instead of pretending this is one complete statewide
+      // trail index:
+      //  - Wikidata (peaks, named/long-distance trails, other landmarks):
+      //    genuinely statewide, but only covers places significant enough
+      //    to have their own Wikidata entry — a numbered forest-service
+      //    trail segment usually won't. Search-by-name (wbsearchentities)
+      //    then a batched wbgetentities lookup for real coordinates,
+      //    kept only if they fall inside this region's actual bbox — both
+      //    endpoints CORS-verified the same way the peak-label feature's
+      //    Wikidata lookup already was (see fetchWikidataPoints above).
+      //  - This app's own recommended camp spots (curated_spots, the same
+      //    live table the pink "Recommended Spots" layer and AI guide
+      //    use) — statewide, always available once fetched once.
+      //  - Whatever trail/rec-site tiles are already loaded on screen
+      //    (querySourceFeatures) — real names straight from the same
+      //    USFS/BLM data the map itself renders, but only for the area
+      //    already panned/zoomed into, since there's no statewide index
+      //    of that tileset available client-side.
+      function initSearch() {
+        const input = document.getElementById('search-input');
+        const resultsEl = document.getElementById('search-results');
+        let searchToken = 0;
+        let debounceTimer = null;
+
+        function resultIconStyle(kind) {
+          switch (kind) {
+            case 'peak': return { color: '#3f7d54', icon: ICON_SVG.mountain };
+            case 'trail': return { color: '#6b8f5a', icon: ICON_SVG.trail };
+            case 'recsite': return { color: '#c99a5b', icon: ICON_SVG.trail };
+            case 'campspot': return { color: GEM_SPOT_FILL_COLOR, icon: ICON_SVG.tent };
+            default: return { color: '#8a8f83', icon: ICON_SVG.pin };
+          }
+        }
+        const KIND_LABELS = {
+          peak: 'Peak', trail: 'Trail', place: 'Landmark',
+          recsite: 'Trailhead / Rec Site', campspot: 'Recommended Camp Spot',
+        };
+
+        function renderResults(groups) {
+          resultsEl.innerHTML = '';
+          const total = groups.reduce((n, g) => n + g.items.length, 0);
+          if (!total) {
+            resultsEl.innerHTML = `<p class="empty">No matches for "${stripHtml(input.value.trim())}" — try a different spelling, a nearby town or canyon name, or pan the map over the area first so its trails/rec sites are loaded.</p>`;
+            return;
+          }
+          for (const group of groups) {
+            if (!group.items.length) continue;
+            const label = document.createElement('div');
+            label.className = 'group-label';
+            label.textContent = group.title;
+            resultsEl.append(label);
+            for (const item of group.items) {
+              const style = resultIconStyle(item.kind);
+              const row = document.createElement('button');
+              row.type = 'button';
+              row.className = 'result-row';
+              const icon = document.createElement('span');
+              icon.className = 'result-icon';
+              icon.style.background = style.color;
+              icon.innerHTML = style.icon;
+              const info = document.createElement('span');
+              info.className = 'result-info';
+              const nameEl = document.createElement('span');
+              nameEl.className = 'result-name';
+              nameEl.textContent = item.name;
+              const kindEl = document.createElement('span');
+              kindEl.className = 'result-kind';
+              kindEl.textContent = KIND_LABELS[item.kind] + (item.subtitle ? ` · ${item.subtitle}` : '');
+              info.append(nameEl, document.createElement('br'), kindEl);
+              row.append(icon, info);
+              row.onclick = item.onSelect;
+              resultsEl.append(row);
+            }
+          }
+        }
+
+        const PEAK_QID = 'Q8502'; // mountain — same constant the peak-label feature already queries by
+        async function searchWikidata(query) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+          try {
+            const searchUrl = `https://www.wikidata.org/w/api.php?${new URLSearchParams({
+              action: 'wbsearchentities', search: query, language: 'en', format: 'json', origin: '*', limit: '12',
+            })}`;
+            const searchData = await fetch(searchUrl, { signal: controller.signal }).then((r) => r.json());
+            const candidates = searchData.search || [];
+            if (!candidates.length) return [];
+            const getUrl = `https://www.wikidata.org/w/api.php?${new URLSearchParams({
+              action: 'wbgetentities', ids: candidates.map((c) => c.id).join('|'), props: 'claims', format: 'json', origin: '*',
+            })}`;
+            const getData = await fetch(getUrl, { signal: controller.signal }).then((r) => r.json());
+            const out = [];
+            for (const c of candidates) {
+              const ent = getData.entities?.[c.id];
+              const coord = ent?.claims?.P625?.[0]?.mainsnak?.datavalue?.value;
+              if (!coord) continue;
+              const lng = coord.longitude, lat = coord.latitude;
+              // Only keep matches that actually fall inside this region's
+              // loaded coverage — the fast path to filtering out Utah's
+              // "Kings Peak" from the several same-named peaks/places
+              // elsewhere in the country/world that wbsearchentities also
+              // returns, without needing a slower/more complex SPARQL
+              // text+geo query.
+              if (bbox && (lng < bbox[0] || lng > bbox[2] || lat < bbox[1] || lat > bbox[3])) continue;
+              const instanceOf = (ent.claims?.P31 || []).map((cl) => cl.mainsnak?.datavalue?.value?.id).filter(Boolean);
+              const description = c.description || '';
+              let kind = 'place';
+              if (instanceOf.includes(PEAK_QID)) kind = 'peak';
+              else if (/\btrail\b/i.test(description)) kind = 'trail';
+              out.push({ name: c.label || query, kind, subtitle: description, lng, lat, qid: c.id });
+            }
+            return out;
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
+
+        async function searchGemSpots(query) {
+          const rows = await getSpotsRows();
+          const q = query.toLowerCase();
+          return rows
+            .filter((r) => (r.name || '').toLowerCase().includes(q))
+            .slice(0, 8)
+            .map((r) => ({ name: r.name, kind: 'campspot', subtitle: FOREST_NAMES[r.forest_unit_id] || '', row: r }));
+        }
+
+        function searchOnScreen(query) {
+          const q = query.toLowerCase();
+          const out = [];
+          try {
+            const seen = new Set();
+            for (const f of map.querySourceFeatures('backcountry', { sourceLayer: 'trails' })) {
+              const name = f.properties?.trail_name;
+              if (!name || seen.has(name) || !name.toLowerCase().includes(q)) continue;
+              seen.add(name);
+              out.push({ name: titleCase(name), kind: 'trail', subtitle: 'on screen', feature: f });
+              if (seen.size >= 6) break;
+            }
+          } catch { /* source/tiles not ready yet — fine, just no on-screen trail matches this time */ }
+          try {
+            const seen = new Set();
+            for (const f of map.querySourceFeatures('backcountry', { sourceLayer: 'developed_rec' })) {
+              const name = f.properties?.recareaname;
+              if (!name || seen.has(name) || !name.toLowerCase().includes(q)) continue;
+              seen.add(name);
+              out.push({ name, kind: 'recsite', subtitle: 'on screen', feature: f });
+              if (seen.size >= 6) break;
+            }
+          } catch { /* same as above */ }
+          return out;
+        }
+
+        function flyThenShow(lngLat, show) {
+          closeSheets();
+          map.flyTo({ center: lngLat, zoom: Math.max(map.getZoom(), 12.5), duration: 900 });
+          show();
+        }
+
+        async function runSearch(query) {
+          const token = ++searchToken;
+          resultsEl.innerHTML = '<p class="loading">Searching…</p>';
+          const [wikidataResults, gemResults] = await Promise.all([
+            searchWikidata(query).catch((err) => { console.warn('Wikidata search failed', err); return []; }),
+            searchGemSpots(query).catch((err) => { console.warn('Recommended-spot search failed', err); return []; }),
+          ]);
+          const onScreenResults = searchOnScreen(query);
+          if (token !== searchToken) return; // input changed again before this resolved
+
+          const toWdItem = (r) => ({
+            name: r.name, kind: r.kind, subtitle: r.subtitle,
+            onSelect: () => flyThenShow([r.lng, r.lat], () => showLandmarkCard({
+              kind: r.kind, name: r.name, description: r.subtitle, coords: [r.lng, r.lat],
+              elevationText: terrainOn ? formatElevation(absoluteElevation([r.lng, r.lat])) : null,
+              sourceUrl: `https://www.wikidata.org/wiki/${r.qid}`,
+            })),
+          });
+          const peaks = wikidataResults.filter((r) => r.kind === 'peak').map(toWdItem);
+          const wdTrails = wikidataResults.filter((r) => r.kind === 'trail').map(toWdItem);
+          const places = wikidataResults.filter((r) => r.kind === 'place').map(toWdItem);
+          const onScreenTrails = onScreenResults.filter((r) => r.kind === 'trail').map((r) => ({
+            name: r.name, kind: 'trail', subtitle: r.subtitle,
+            onSelect: () => flyThenShow(centroidOf(r.feature.geometry), () => showTrailCard(r.feature)),
+          }));
+          const onScreenRec = onScreenResults.filter((r) => r.kind === 'recsite').map((r) => ({
+            name: r.name, kind: 'recsite', subtitle: r.subtitle,
+            onSelect: () => flyThenShow(r.feature.geometry.coordinates, () => showRecSiteCard(r.feature)),
+          }));
+          const campSpots = gemResults.map((r) => ({
+            name: r.name, kind: 'campspot', subtitle: r.subtitle,
+            onSelect: () => flyThenShow([r.row.lon, r.row.lat], () => showGemSpotCard({
+              properties: r.row, geometry: { type: 'Point', coordinates: [r.row.lon, r.row.lat] },
+            })),
+          }));
+
+          renderResults([
+            { title: 'Peaks', items: peaks },
+            { title: 'Trails', items: [...wdTrails, ...onScreenTrails] },
+            { title: 'Recommended Camp Spots', items: campSpots },
+            { title: 'Trailheads & Rec Sites', items: onScreenRec },
+            { title: 'Other Landmarks', items: places },
+          ]);
+        }
+
+        input.oninput = () => {
+          clearTimeout(debounceTimer);
+          const q = input.value.trim();
+          if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+          debounceTimer = setTimeout(() => runSearch(q), 350);
+        };
+        input.onkeydown = (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          clearTimeout(debounceTimer);
+          const q = input.value.trim();
+          if (q.length >= 2) runSearch(q);
+        };
+      }
 
       // Tree/water signal for the scanner's preference checkboxes, from
       // USGS/MRLC's public NLCD (National Land Cover Database) map
@@ -1350,15 +1888,20 @@
       map.on('load', async () => {
         regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
+        const gemSpots = addGemSpotsLayer(map);
         buildLayerPanel(map, style, manifest);
+        addGemSpotsPanelRow(map, gemSpots);
         buildScanPreferencesPanel();
-        setupInfoClicks(map, style);
+        setupInfoClicks(map, style, gemSpots.layerId);
         setupSpotClicks();
         if (savedSpots.length) refreshSavedSpotsLayer();
+        gemSpotsRef = gemSpots;
+        updateLandmarks(); // in case the hash URL restored a view already zoomed in enough to show peaks
 
         const regions = await loadAvailableRegions(manifest);
         addRegionCoverage(map, regions);
         buildRegionsPanel(map, regions);
+        initSearch();
       });
     }
 
@@ -1399,6 +1942,76 @@
     };
     const DEFAULT_ACTIVITY_STYLE = { color: '#8a8f83', icon: ICON_SVG.pin };
     const TRAIL_STYLE = { color: '#6b8f5a', icon: ICON_SVG.mountain };
+
+    // ---- Recommended "gem" spots (curated_spots table) ----
+
+    const FOREST_NAMES = {
+      USFS_R04_FISHLAKE: 'Fishlake National Forest',
+      USFS_R04_UWC: 'Uinta-Wasatch-Cache National Forest',
+      USFS_R04_DIXIE: 'Dixie National Forest',
+      USFS_R04_ASHLEY: 'Ashley National Forest',
+      USFS_R04_MANTI_LASAL: 'Manti-La Sal National Forest',
+    };
+    const VIEW_TYPE_LABELS = {
+      alpine_meadow: 'Alpine Meadow', lake: 'Lake', canyon: 'Canyon', waterfall: 'Waterfall',
+      ridge_summit: 'Ridge / Summit', valley_overlook: 'Valley Overlook', river: 'River',
+      desert_slickrock: 'Desert / Slickrock', forest: 'Forest', wildflowers: 'Wildflowers',
+    };
+    const ACCESS_TYPE_LABELS = {
+      drive_in_easy: 'Drive-in (any vehicle)', drive_in_high_clearance: 'Drive-in (high clearance/4x4)',
+      backpack_short: 'Short backpack (under ~4 mi)', backpack_long: 'Long backpack (4+ mi)',
+    };
+    const WILDFIRE_LABELS = {
+      active_nearby: 'Active wildfire nearby', watch: 'Wildfire in the area',
+    };
+    const GEM_ICON_SVG = {
+      hammock: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6v3M21 6v3M3 9c4 6 14 6 18 0"/></svg>',
+      overlook: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M4 20 10 6l3 5 2-3 5 12"/><circle cx="18" cy="6" r="2"/></svg>',
+    };
+
+    // One consistent fill color for every gem spot — it's the category
+    // identity (matches campgrounds' orange, trails' cream, etc. each being
+    // one color in the legend), not a per-spot signal. Wildfire risk still
+    // shows on the map itself via the stroke (ring), not the fill, plus the
+    // full warning in the popup — see GEM_SPOT_STROKE_COLOR below.
+    const GEM_SPOT_FILL_COLOR = '#e0529a';
+    const GEM_SPOT_STROKE_COLOR = [
+      'match', ['get', 'wildfire_status'],
+      'active_nearby', '#c8281e',
+      'watch', '#e0b073',
+      '#ffffff',
+    ];
+    const GEM_SPOT_STROKE_WIDTH = [
+      'match', ['get', 'wildfire_status'],
+      'active_nearby', 3,
+      'watch', 2.5,
+      1.5,
+    ];
+
+    function chooseGemIcon(props) {
+      const viewTypes = props.view_type || [];
+      const campTypes = props.camp_type || [];
+      if (viewTypes.includes('waterfall')) return { color: '#5fa8dd', icon: ICON_SVG.wave };
+      if (viewTypes.includes('lake')) return { color: '#5fa8dd', icon: ICON_SVG.fish };
+      if (viewTypes.includes('ridge_summit') || viewTypes.includes('valley_overlook') || viewTypes.includes('canyon')) {
+        return { color: '#c99a5b', icon: GEM_ICON_SVG.overlook };
+      }
+      if (campTypes.includes('hammock') && !campTypes.includes('tent')) {
+        return { color: '#4f9d68', icon: GEM_ICON_SVG.hammock };
+      }
+      return { color: '#4f9d68', icon: ICON_SVG.tent };
+    }
+
+    // A close-in crop from the same keyless ArcGIS World Imagery service the
+    // satellite basemap itself uses (see app/src/map/style.ts) — a plain
+    // <img src> works without any CORS concern since nothing here reads the
+    // pixels back into JS.
+    function satelliteThumbUrl(lat, lon) {
+      const padDeg = 0.006; // roughly a 1300 ft square at these latitudes
+      const bbox = [lon - padDeg, lat - padDeg, lon + padDeg, lat + padDeg].join(',');
+      return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?' +
+        new URLSearchParams({ bbox, bboxSR: '4326', imageSR: '4326', size: '400,300', format: 'jpg', f: 'image' });
+    }
 
     function setInfoIcon(style) {
       const el = document.getElementById('info-icon');
@@ -1469,12 +2082,36 @@
       return a;
     }
 
+    // Dropped onto any card with real coordinates — trail, rec site,
+    // recommended spot, or a searched peak/place — so "camp near this"
+    // is always one tap away from wherever the user actually is, not
+    // just from the star-button/scan flow. findCampSpotNearFn is set once
+    // start() has the map+scanner ready (see findCampSpotNear); before
+    // that (a card opened mid-load, in practice never reachable by a
+    // real tap) it's a no-op rather than throwing.
+    function appendFindSpotButton(body, coords, label) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'panel-btn secondary';
+      btn.textContent = 'Find a camp spot near here';
+      btn.onclick = () => findCampSpotNearFn && findCampSpotNearFn(coords, label);
+      body.append(btn);
+    }
+
     // The USFS/BLM tile data has no site photography (see the dead
     // "markertype" image path noted above), so real pictures come from
-    // Wikimedia Commons' free geosearch API instead — real photos taken
-    // near this exact coordinate, keyless and CORS-enabled for browser
-    // use. Best-effort: outdoor rec sites often have nothing nearby, in
+    // Wikimedia Commons' and Mapillary's geosearch APIs instead — real
+    // photos taken near this exact coordinate. Best-effort: remote
+    // backcountry spots often have nothing nearby on either source, in
     // which case the gallery just doesn't appear.
+    //
+    // Shared junk filter: both sources' geosearch return plenty of
+    // non-scenic matches near any given coordinate (astronaut Earth
+    // photography, species ID close-ups, satellite imagery, road/fire
+    // damage reports) that pass a naive "is this a photo" check but
+    // aren't a picture of the place itself.
+    const JUNK_PHOTO_PATTERN = /\bISS\d{3}-E-\d+\b|Satellite (pictures?|images?) of|logo|icon|flag|diagram|chart|\bmap\b|signage|sign\.jpg|Landsat|Sentinel-\d|\bMODIS\b|\bASTER\b|Earth Observatory|fung(i|us)|mushroom|lichen|\bmoss\b|insect|arthropod|spider|beetle|larva|caterpillar|close-?up|macro photography|specimen|hoar frost|frost crystal|snowflake|flood damage|fire damage|storm damage|burn scar|wildfire|road damage|construction|\binterstate\b|freeway|\binversion\b|traffic jam/i;
+
     const photoCache = new Map();
     async function fetchCommonsPhotos([lng, lat], limit = 4) {
       const cacheKey = `${lng.toFixed(4)},${lat.toFixed(4)}`;
@@ -1516,7 +2153,7 @@
                 // show up in geosearch near almost any coordinate without
                 // being a picture of this place. Note: titles come back as
                 // "File:XXX.jpg", so ISS### must not be anchored to ^.
-                return !/\bISS\d{3}-E-\d+\b|Satellite (pictures?|images?) of|logo|icon|flag|diagram|chart|\bmap\b|signage|sign\.jpg|Landsat|Sentinel-\d|\bMODIS\b|\bASTER\b|Earth Observatory|fung(i|us)|mushroom|lichen|\bmoss\b|insect|arthropod|spider|beetle|larva|caterpillar|close-?up|macro photography|specimen|hoar frost|frost crystal|snowflake|flood damage|fire damage|storm damage|burn scar|wildfire|road damage|construction|\binterstate\b|freeway|\binversion\b|traffic jam/i.test(haystack);
+                return !JUNK_PHOTO_PATTERN.test(haystack);
               })
               .map(({ info }) => ({
                 thumbUrl: info.thumburl,
@@ -1524,6 +2161,7 @@
                 author: stripHtml(info.extmetadata?.Artist?.value) || 'Wikimedia Commons contributor',
                 license: info.extmetadata?.LicenseShortName?.value || '',
                 landscape: (info.width || 0) >= (info.height || 0),
+                source: 'Wikimedia Commons',
               }))
               .filter((p) => /^https:\/\//i.test(p.thumbUrl || '') && /^https:\/\//i.test(p.pageUrl || ''))
               // Landscape-oriented photos read better in the gallery strip
@@ -1542,20 +2180,98 @@
       return result;
     }
 
-    function attachPhotoGallery(body, coord, token) {
+    // Mapillary has a large corpus of crowdsourced street/trail-level
+    // photos, which helps fill in spots Commons has nothing for — skews
+    // toward accessible trailheads/roads rather than the exact backcountry
+    // destination, since coverage drops once contributors leave a mapped
+    // track. Get a free access token at mapillary.com/developer (dashboard
+    // -> create an app -> "Client Token", starts with "MLY|") and paste it
+    // in below. Left blank, this source just no-ops and the gallery falls
+    // back to Commons-only, same as before.
+    const MAPILLARY_ACCESS_TOKEN = 'MLY|28033125776354795|a36ac5f01c5566b0920ceb5fe531b721';
+    const mapillaryCache = new Map();
+    async function fetchMapillaryPhotos([lng, lat], limit = 4) {
+      if (!MAPILLARY_ACCESS_TOKEN) return [];
+      const cacheKey = `${lng.toFixed(4)},${lat.toFixed(4)}`;
+      if (mapillaryCache.has(cacheKey)) return mapillaryCache.get(cacheKey);
+
+      const result = await (async () => {
+        // Mapillary's Images endpoint filters by bbox, not lat/lon+radius,
+        // so approximate a box in degrees — 1 degree latitude is ~111km
+        // everywhere; longitude shrinks with latitude, so scale it by
+        // cos(lat). Good enough for a "nearby photos" search, not survey
+        // precision.
+        //
+        // Kept deliberately small: the endpoint has an undocumented
+        // total-response-size budget and hard-errors (rather than
+        // truncating) once a bbox pulls back too much — verified by
+        // testing that even a ~1km box errors out in dense coverage
+        // areas (e.g. downtown SF) once thumb_1024_url/creator fields are
+        // requested. Remote backcountry spots have far sparser coverage,
+        // so this stays well under that budget in practice; a hit near a
+        // genuinely dense area just falls through to Commons-only, same
+        // as any other empty result.
+        for (const radiusKm of [0.5, 1.5]) {
+          const dLat = radiusKm / 111;
+          const dLng = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
+          const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].join(',');
+          const url = 'https://graph.mapillary.com/images?' + new URLSearchParams({
+            access_token: MAPILLARY_ACCESS_TOKEN, bbox,
+            fields: 'id,thumb_1024_url,creator',
+          });
+          try {
+            const data = await fetch(url).then((r) => r.json());
+            const photos = (data.data || [])
+              .filter((p) => p.thumb_1024_url)
+              .map((p) => ({
+                thumbUrl: p.thumb_1024_url,
+                pageUrl: `https://www.mapillary.com/app/?pKey=${p.id}&focus=photo`,
+                author: p.creator?.username || 'Mapillary contributor',
+                license: 'CC BY-SA 4.0',
+                landscape: true, // street-level captures are effectively all landscape framing
+                source: 'Mapillary',
+              }));
+            if (photos.length) return photos.slice(0, limit);
+          } catch (err) {
+            console.warn('Mapillary photo lookup failed', err);
+            return [];
+          }
+        }
+        return [];
+      })();
+
+      mapillaryCache.set(cacheKey, result);
+      return result;
+    }
+
+    function attachPhotoGallery(body, coord, token, curatedPhoto) {
       const gallery = document.createElement('div');
       gallery.className = 'info-gallery';
       body.prepend(gallery);
 
-      fetchCommonsPhotos(coord).then((photos) => {
+      Promise.all([fetchCommonsPhotos(coord), fetchMapillaryPhotos(coord)]).then(([commonsPhotos, mapillaryPhotos]) => {
         if (token !== infoCardToken) return; // a different card is open now
+        // The curated photo (when present) is hand-verified as this exact
+        // spot, pulled from one of the recommendation's own cited sources,
+        // so it always leads. Commons/Mapillary fill remaining slots as
+        // best-effort nearby matches — useful for surrounding terrain, but
+        // not verified against this specific spot the way curated is.
+        const curated = curatedPhoto?.url ? [{
+          thumbUrl: curatedPhoto.url,
+          pageUrl: curatedPhoto.creditUrl,
+          author: curatedPhoto.creditLabel || 'Source',
+          license: '',
+          source: curatedPhoto.creditLabel || 'Source',
+          verified: true,
+        }] : [];
+        const photos = [...curated, ...commonsPhotos, ...mapillaryPhotos].slice(0, 4);
         if (!photos.length) { gallery.remove(); return; }
         for (const photo of photos) {
           const a = document.createElement('a');
           a.href = photo.pageUrl;
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
-          a.title = `Photo: ${photo.author}${photo.license ? ' · ' + photo.license : ''} — Wikimedia Commons`;
+          a.title = `Photo: ${photo.author}${photo.license ? ' · ' + photo.license : ''} — ${photo.source}`;
           const img = document.createElement('img');
           img.src = photo.thumbUrl;
           img.loading = 'lazy';
@@ -1563,23 +2279,49 @@
           a.append(img);
           gallery.append(a);
         }
+        const restSources = [...new Set(photos.filter((p) => !p.verified).map((p) => p.source))];
         const caption = document.createElement('p');
         caption.className = 'info-gallery-attrib';
-        caption.textContent = 'Photos via Wikimedia Commons — may not be this exact spot';
+        caption.textContent = curated.length
+          ? (restSources.length ? `First photo verified for this spot · others via ${restSources.join(' & ')} may not be` : 'Photo verified for this spot')
+          : `Photos via ${restSources.join(' & ')} — may not be this exact spot`;
         gallery.after(caption);
       }).catch(() => gallery.remove());
     }
 
     let infoCardToken = 0;
+    // Set once start() creates the map — the AI guide is wired up
+    // independently of map load (so its settings UI works immediately),
+    // but needs this to fly to and open a spot a reply links to.
+    let mapRef = null;
+    let gemSpotsRef = null; // { layerId, loaded } from addGemSpotsLayer
+    let findCampSpotNearFn = null; // set inside start() once the map/scanner exist; used by card buttons defined at top level
+    let lastScanContextTextRef = ''; // mirrors runCampScan's lastScanContextText — initAIGuide() lives outside start(), so it reads this instead
 
-    function openInfoCard(kicker, title, buildBody, photoCoord) {
+    // Reuses aiBtn's own click handler (wired up in initAIGuide) rather
+    // than duplicating its open/refresh-from-storage logic here — safe to
+    // call from an info card since opening one already closed the AI
+    // sheet if it was open, so this always finds it closed and toggles
+    // it back open rather than accidentally closing it.
+    function askAIAbout(title) {
+      aiBtn.click();
+      const input = document.getElementById('ai-text-input');
+      if (input) {
+        input.value = `About ${title || 'this spot'}: `;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+
+    function openInfoCard(kicker, title, buildBody, photoCoord, curatedPhoto) {
       const token = ++infoCardToken;
       document.getElementById('info-kicker').textContent = kicker;
       document.getElementById('info-title').textContent = title || 'Untitled';
       const body = document.getElementById('info-body');
       body.innerHTML = '';
       buildBody(body);
-      if (photoCoord) attachPhotoGallery(body, photoCoord, token);
+      if (photoCoord) attachPhotoGallery(body, photoCoord, token, curatedPhoto);
+      document.getElementById('info-ask-ai').onclick = () => askAIAbout(title);
       closeSheets();
       infoSheet.classList.add('open');
       scrim.classList.add('open');
@@ -1618,6 +2360,7 @@
           factRow('Accessibility', titleCase(props.accessibility_status)),
         ].forEach((row) => row && facts.append(row));
         body.append(facts);
+        appendFindSpotButton(body, centroidOf(feature.geometry), name);
       }, centroidOf(feature.geometry));
     }
 
@@ -1662,6 +2405,7 @@
 
         const link = externalLink(props.recareaurl, 'Official page ↗');
         if (link) body.append(link);
+        appendFindSpotButton(body, centroidOf(feature.geometry), name);
       }, centroidOf(feature.geometry));
     }
 
@@ -1673,16 +2417,120 @@
     // reusable top-level state like showRecSiteCard/showTrailCard's
     // helpers are.
 
-    function setupInfoClicks(map, style) {
+    function showGemSpotCard(feature) {
+      const props = feature.properties;
+      // MapLibre serializes GeoJSON array/object properties as JSON strings
+      // on the rendered feature, not live arrays — parse them back out.
+      const parseArr = (v) => { try { return Array.isArray(v) ? v : JSON.parse(v || '[]'); } catch { return []; } };
+      const viewTypes = parseArr(props.view_type);
+      const campTypes = parseArr(props.camp_type);
+      const sources = parseArr(props.sources);
+
+      const style = chooseGemIcon({ view_type: viewTypes, camp_type: campTypes });
+      setInfoIcon(style);
+      openInfoCard('Recommended Spot · ' + (FOREST_NAMES[props.forest_unit_id] || 'Utah'), props.name, (body) => {
+        const [lng, lat] = feature.geometry.coordinates;
+
+        const img = document.createElement('img');
+        img.className = 'satellite-thumb';
+        img.loading = 'lazy';
+        img.alt = 'Satellite view of ' + props.name;
+        img.src = satelliteThumbUrl(lat, lng);
+        body.append(img);
+
+        if (props.wildfire_status === 'active_nearby' || props.wildfire_status === 'watch') {
+          const note = document.createElement('div');
+          note.className = 'wildfire-note' + (props.wildfire_status === 'watch' ? ' watch' : '');
+          const p = document.createElement('p');
+          p.textContent = '🔥 ' + (props.wildfire_note || WILDFIRE_LABELS[props.wildfire_status]);
+          note.append(p);
+          body.append(note);
+        }
+
+        const badges = document.createElement('div');
+        badges.className = 'info-badges';
+        for (const vt of viewTypes) badges.append(badge(VIEW_TYPE_LABELS[vt] || titleCase(vt)));
+        for (const ct of campTypes) badges.append(badge(titleCase(ct)));
+        if (props.access_type) badges.append(badge(ACCESS_TYPE_LABELS[props.access_type] || titleCase(props.access_type)));
+        if (props.wilderness) badges.append(badge('Wilderness'));
+        if (badges.children.length) body.append(badges);
+
+        const facts = document.createElement('div');
+        facts.className = 'info-facts';
+        [
+          factRow('Forest', FOREST_NAMES[props.forest_unit_id]),
+          factRow('Elevation', props.elevation_ft ? `${Number(props.elevation_ft).toLocaleString()} ft` : null),
+          factRow('Best season', props.best_season),
+          factRow('Coordinate precision', titleCase(String(props.coordinate_confidence || '').replace(/-/g, ' '))),
+        ].forEach((row) => row && facts.append(row));
+        if (facts.children.length) body.append(facts);
+
+        if (props.description) body.append(paragraph(props.description, 'info-desc'));
+
+        if (props.distance_notes) { body.append(sectionTitle('Getting there')); body.append(paragraph(props.distance_notes)); }
+        if (props.legality_note) { body.append(sectionTitle('Legal to camp here')); body.append(paragraph(props.legality_note)); }
+
+        if (sources.length) {
+          body.append(sectionTitle('Sources'));
+          sources.forEach((url, i) => {
+            const link = externalLink(url, `Source ${i + 1} ↗`);
+            if (link) { link.style.marginRight = '8px'; body.append(link); }
+          });
+        }
+
+        appendFindSpotButton(body, feature.geometry.coordinates, props.name);
+      }, feature.geometry.coordinates, props.photo_url ? {
+        url: props.photo_url,
+        creditLabel: props.photo_credit_label,
+        creditUrl: props.photo_credit_url,
+      } : null);
+    }
+
+    // Card for a search result that came from Wikidata (a named peak,
+    // long-distance/named trail, or other landmark) rather than from this
+    // app's own tile/Supabase data — see initSearch(). Framed honestly as
+    // third-party, community-sourced data rather than this app's own
+    // verified facts, same spirit as the "not verified" language used
+    // throughout the scanner/save-spot features.
+    const LANDMARK_KIND_META = {
+      peak: { kicker: 'Peak', style: { color: '#3f7d54', icon: ICON_SVG.mountain } },
+      trail: { kicker: 'Named Trail', style: { color: '#6b8f5a', icon: ICON_SVG.trail } },
+      place: { kicker: 'Landmark', style: { color: '#8a8f83', icon: ICON_SVG.pin } },
+    };
+    function showLandmarkCard({ kind, name, description, coords, elevationText, sourceUrl }) {
+      const meta = LANDMARK_KIND_META[kind] || LANDMARK_KIND_META.place;
+      setInfoIcon(meta.style);
+      openInfoCard(meta.kicker, name, (body) => {
+        if (elevationText) {
+          const facts = document.createElement('div');
+          facts.className = 'info-facts';
+          const row = factRow('Elevation', elevationText);
+          if (row) facts.append(row);
+          if (facts.children.length) body.append(facts);
+        }
+        if (description) body.append(paragraph(description, 'info-desc'));
+        body.append(paragraph('From Wikidata, a community-sourced database — not this app\'s own verified data. The name and location should be roughly right; treat anything more specific as unconfirmed.', 'info-desc'));
+        const link = externalLink(sourceUrl, 'View on Wikidata ↗');
+        if (link) body.append(link);
+        appendFindSpotButton(body, coords, name);
+      }, coords);
+    }
+
+    // gemLayerId is passed in separately from style-derived layers: the gem
+    // spots layer is added at runtime from a live Supabase query (see
+    // addGemSpotsLayer below), not baked into style.json, so it's never in
+    // styleIds and needs its own opt-in here once it actually exists.
+    function setupInfoClicks(map, style, gemLayerId) {
       const styleIds = new Set(style.layers.map((l) => l.id));
       // The label layer shares the same source features as the dot, so a
       // tap on the visible text (what people naturally aim for) resolves
       // to the same rec site as a tap on the tiny circle itself.
       const recLayers = ['developed-rec', 'developed-rec-label'].filter((id) => styleIds.has(id));
       const trailLayers = ['trails'].filter((id) => styleIds.has(id));
-      if (!recLayers.length && !trailLayers.length) return;
+      const gemLayers = gemLayerId ? [gemLayerId] : [];
+      if (!recLayers.length && !trailLayers.length && !gemLayers.length) return;
 
-      for (const id of [...recLayers, ...trailLayers]) {
+      for (const id of [...recLayers, ...trailLayers, ...gemLayers]) {
         map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -1695,6 +2543,12 @@
           [e.point.x - 16, e.point.y - 16],
           [e.point.x + 16, e.point.y + 16],
         ];
+        // Gem spots are checked first: they're the smaller, denser layer and
+        // most likely to sit on top of a rec-site dot at the same location.
+        if (gemLayers.length) {
+          const [gem] = map.queryRenderedFeatures(hitBox, { layers: gemLayers });
+          if (gem) return showGemSpotCard(gem);
+        }
         if (recLayers.length) {
           const [rec] = map.queryRenderedFeatures(hitBox, { layers: recLayers });
           if (rec) return showRecSiteCard(rec);
@@ -1747,6 +2601,16 @@
     // out on the world view, per index.json published alongside the packs.
     const REGION_INDEX_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/storage/v1/object/public/region-packs/index.json';
     const REGION_BASE_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/storage/v1/object/public/region-packs/';
+
+    // Recommended "gem" spots — hand-researched dispersed camping/backpacking
+    // spots with exceptional views, live in a Postgres table rather than
+    // baked into the pmtiles archive, specifically so wildfire status can be
+    // refreshed on a schedule (see backcountry/curated_spots/README.md and
+    // the refresh-wildfire-status Supabase Edge Function) without waiting on
+    // a full region-pack rebuild. This key is Supabase's public anon/publishable
+    // key — safe to embed client-side, it can only SELECT via RLS.
+    const SUPABASE_ANON_KEY = 'sb_publishable_OX03_AnGtamkyR7USRwfGA_vmFEiyEb';
+    const GEM_SPOTS_URL = 'https://jxrbtqujdnuxvyoerfug.supabase.co/rest/v1/curated_spots?select=*';
 
     async function loadAvailableRegions(primaryManifest) {
       const regions = [];
@@ -1840,6 +2704,103 @@
       updatePinVisibility();
     }
 
+    // Recommended "gem" spots — a live GeoJSON layer sourced straight from
+    // Supabase (curated_spots table), not the pmtiles archive: the whole
+    // point is that a background job can update wildfire_status on these
+    // rows and the map reflects it on next load, no region-pack rebuild.
+    // The layer/source is created synchronously (empty) so click handling
+    // and the layer-panel toggle can wire up immediately; the actual rows
+    // stream in a moment later via .loaded.
+    function addGemSpotsLayer(map) {
+      const sourceId = 'gem-spots-source';
+      const layerId = 'gem-spots';
+
+      map.addSource(sourceId, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: layerId,
+        type: 'circle',
+        source: sourceId,
+        paint: {
+          // Visible from a statewide view, not just once you've zoomed in
+          // close enough to stumble onto one — the whole point of the
+          // layer is browsing hundreds of spots, not hunting for dots.
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 5, 7, 6.5, 10, 8, 14, 11],
+          'circle-color': GEM_SPOT_FILL_COLOR,
+          'circle-stroke-width': GEM_SPOT_STROKE_WIDTH,
+          'circle-stroke-color': GEM_SPOT_STROKE_COLOR,
+          'circle-opacity': 0.92,
+        },
+      });
+
+      const loaded = (async () => {
+        try {
+          const resp = await fetch(GEM_SPOTS_URL, {
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+          });
+          if (!resp.ok) throw new Error(`Supabase fetch failed: ${resp.status}`);
+          const rows = await resp.json();
+          map.getSource(sourceId).setData({
+            type: 'FeatureCollection',
+            features: rows.map((row) => ({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [row.lon, row.lat] },
+              properties: row,
+            })),
+          });
+          return rows.length;
+        } catch (err) {
+          console.warn('Could not load recommended spots', err);
+          return 0;
+        }
+      })();
+
+      return { layerId, loaded };
+    }
+
+    // buildLayerPanel below only lists layers that already exist in
+    // style.json, since it derives its list from LAYER_GROUPS filtered by
+    // styleIds — gem-spots is added at runtime instead, so it gets its own
+    // group appended after that panel is built rather than folded into it.
+    function addGemSpotsPanelRow(map, gemSpots) {
+      const body = document.getElementById('layers-body');
+
+      const wrap = document.createElement('div');
+      wrap.className = 'group';
+      const heading = document.createElement('h2');
+      heading.textContent = 'Recommended Spots';
+      wrap.append(heading);
+
+      const row = document.createElement('label');
+      row.className = 'row';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = true;
+      box.onchange = () => {
+        map.setLayoutProperty(gemSpots.layerId, 'visibility', box.checked ? 'visible' : 'none');
+      };
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.background = GEM_SPOT_FILL_COLOR;
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = 'Gem Spots (live, wildfire-aware)';
+      row.append(box, swatch, label);
+      wrap.append(row);
+
+      const note = document.createElement('p');
+      note.className = 'group-note';
+      note.textContent = 'Loading curated spots…';
+      wrap.append(note);
+
+      body.append(wrap);
+
+      gemSpots.loaded.then((count) => {
+        note.textContent = count
+          ? `${count.toLocaleString()} hand-researched spots across Fishlake, Uinta-Wasatch-Cache, Dixie, Ashley, and Manti-La Sal — tap a dot for details. Red/amber dots mean an active wildfire is nearby, checked every 6 hours.`
+          : 'Could not load recommended spots right now — check your connection.';
+      });
+    }
+
     function buildLayerPanel(map, style, manifest) {
       const body = document.getElementById('layers-body');
       const styleIds = new Set(style.layers.map((l) => l.id));
@@ -1906,6 +2867,548 @@
       note.textContent = 'Colors above match the map — this is also your legend.';
       body.prepend(note);
     }
+
+    // ---- AI Trail Guide: bring-your-own-key chat + image matching ----
+    // All four providers below return proper CORS headers on a direct
+    // browser POST (verified against the live APIs, not assumed) — so
+    // this talks to them straight from the client with the user's own
+    // key. No proxy/backend needed, and the key never touches anything
+    // we run.
+    const AI_PROVIDERS = {
+      anthropic: {
+        label: 'Claude (Anthropic)', defaultModel: 'claude-sonnet-5', hint: 'e.g. claude-sonnet-5, claude-opus-5, claude-haiku-4-5-20251001', needsBaseUrl: false, keyUrl: 'https://console.anthropic.com/settings/keys',
+        webSearchCostHint: 'Verified against Anthropic\'s docs: costs $10 per 1,000 searches on top of normal token usage, charged to your key.',
+      },
+      openai: { label: 'ChatGPT (OpenAI)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false, keyUrl: 'https://platform.openai.com/api-keys' },
+      google: { label: 'Gemini (Google)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
+      groq: {
+        label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use llama-3.2-11b-vision-preview if you want image upload to work', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys',
+        webSearchCostHint: 'Switches to Groq\'s "compound" system (web search, code execution, more) for this account. Their docs don\'t publish exact pricing/rate limits for it separately from normal models — check console.groq.com/settings/billing after enabling if that matters to you.',
+      },
+      custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Grok, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
+    };
+    const AI_SETTINGS_KEY = 'bc_ai_settings';
+    const AI_MAX_TOKENS = 1000;
+    const MAX_HISTORY_MESSAGES = 12; // ~6 exchanges kept; older ones drop off rather than growing every request forever
+
+    const AI_SETTINGS_DEFAULT = { provider: 'anthropic', apiKey: '', model: AI_PROVIDERS.anthropic.defaultModel, baseUrl: '', webSearch: false };
+    function loadAISettings() {
+      try {
+        const raw = localStorage.getItem(AI_SETTINGS_KEY);
+        return raw ? { ...AI_SETTINGS_DEFAULT, ...JSON.parse(raw) } : { ...AI_SETTINGS_DEFAULT };
+      } catch {
+        return { ...AI_SETTINGS_DEFAULT };
+      }
+    }
+    function saveAISettings(s) { localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(s)); }
+
+    // Same live curated_spots table the Gem Spots map layer reads —
+    // fetched once per session and reused as raw rows (not the same
+    // request as the layer's own fetch — simplicity over sharing one
+    // in-flight promise). The formatted context text is rebuilt per
+    // message instead of cached, since it depends on that message's
+    // query text and the active provider's token budget.
+    let spotsRowsPromise = null;
+    async function getSpotsRows() {
+      if (spotsRowsPromise) return spotsRowsPromise;
+      spotsRowsPromise = (async () => {
+        try {
+          const resp = await fetch(GEM_SPOTS_URL, {
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+          });
+          if (!resp.ok) throw new Error(`Supabase fetch failed: ${resp.status}`);
+          return await resp.json();
+        } catch (err) {
+          console.warn('Could not load spots for AI guide', err);
+          return [];
+        }
+      })();
+      return spotsRowsPromise;
+    }
+
+    // Shorter than FOREST_NAMES (drops "National Forest") purely to save
+    // tokens in a table sent on every request — FOREST_NAMES itself is
+    // used elsewhere in the UI and stays as-is.
+    const SHORT_FOREST = {
+      USFS_R04_FISHLAKE: 'Fishlake', USFS_R04_UWC: 'Uinta-Wasatch-Cache', USFS_R04_DIXIE: 'Dixie',
+      USFS_R04_ASHLEY: 'Ashley', USFS_R04_MANTI_LASAL: 'Manti-La Sal',
+    };
+    const SPOTS_TABLE_HEADER = 'name|forest|lat,lon|coord_precision|elev_ft|view_type|camp_type|access_type|wilderness(Y/N)|best_season|notes';
+    // Groq's free/on-demand tier caps some models at 12,000 tokens per
+    // MINUTE total — sending the full ~287-spot table (~35-38k tokens
+    // unabridged) blew straight through that on the very first message
+    // (confirmed against the live API: "Request too large... Limit
+    // 12000, Requested 38569"). Custom endpoints are unknown quantities,
+    // so treated just as conservatively. The big three providers have
+    // comfortably higher minimums, but still capped rather than
+    // uncapped, since token cost/latency scales with this regardless of
+    // provider and 287 spots will only grow over time.
+    const SPOTS_TOKEN_BUDGET = { anthropic: 20000, openai: 20000, google: 20000, groq: 5000, custom: 5000 };
+    const approxTokens = (s) => Math.ceil(s.length / 4); // rough chars/4 heuristic, not a real tokenizer
+
+    function spotSearchText(r) {
+      return [r.name, SHORT_FOREST[r.forest_unit_id], (r.view_type || []).join(' '), (r.camp_type || []).join(' '), r.description, r.best_season, r.access_type].join(' ').toLowerCase();
+    }
+    function spotLine(r) {
+      const conf = { precise: 'precise', approximate: 'approx', 'rough-area-only': 'rough-area' }[r.coordinate_confidence] || '?';
+      const notes = (r.description || '').replace(/\s+/g, ' ').trim().slice(0, 110);
+      return [
+        r.name, SHORT_FOREST[r.forest_unit_id] || r.forest_unit_id || '', `${(+r.lat).toFixed(3)},${(+r.lon).toFixed(3)}`, conf,
+        r.elevation_ft || '', (r.view_type || []).join(','), (r.camp_type || []).join(','),
+        r.access_type || '', r.wilderness ? 'Y' : 'N', r.best_season || '', notes,
+      ].join('|');
+    }
+
+    // Ranks spots by keyword overlap with the user's actual question so
+    // the ones most likely relevant survive the token budget, instead of
+    // shrinking every row equally thin to force-fit all 287. Falls back
+    // to original order when nothing matches (e.g. an image-only
+    // message with no text query yet).
+    function buildSpotsContext(rows, queryText, tokenBudget) {
+      if (!rows.length) return '(spot database failed to load — answer from general knowledge only, and say so)';
+      const qWords = (queryText || '').toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+      const scored = rows.map((r) => {
+        const hay = spotSearchText(r);
+        return { r, score: qWords.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0) };
+      });
+      const ordered = scored.some((s) => s.score > 0) ? scored.sort((a, b) => b.score - a.score).map((s) => s.r) : rows;
+
+      const lines = [];
+      let used = approxTokens(SPOTS_TABLE_HEADER);
+      let omitted = 0;
+      for (const r of ordered) {
+        const line = spotLine(r);
+        const cost = approxTokens(line) + 1;
+        if (used + cost > tokenBudget) { omitted++; continue; }
+        lines.push(line);
+        used += cost;
+      }
+      let text = `${SPOTS_TABLE_HEADER}\n${lines.join('\n')}`;
+      if (omitted) text += `\n(+${omitted} more spots in the database exist but aren't shown here for length — if the user names a specific area/forest not covered above, say the database has more than fits in one lookup rather than assuming it's absent)`;
+      return text;
+    }
+
+    async function getSpotsContextFor(queryText, provider) {
+      const rows = await getSpotsRows();
+      return buildSpotsContext(rows, queryText, SPOTS_TOKEN_BUDGET[provider] ?? 6000);
+    }
+
+    function aiSystemPrompt(spotsText, webSearchEnabled, scanText) {
+      return `You are the Backcountry AI Trail Guide, an expert on dispersed and backcountry camping in Utah. Below is a table of real, curated spots (pipe-delimited, column order in the header), pulled live from this app's database. It may be a partial, relevance-ranked subset, not the whole database — see the note at the end of the table if spots were left out.${scanText ? ' There is also a second, smaller table of spots this session\'s live terrain scanner just found in the user\'s current map view — see SCANNED CANDIDATES below.' : ''}
+
+HOW TO EVALUATE A SPOT (use this for matching existing spots AND any unverified lead you propose):
+- Wind/shelter: tree cover or a lee slope shelters better; open ridges/overlooks trade shelter for view.
+- Tent pad: gentle, well-drained ground; avoid drainages (flash flood risk) and >10-15% slope.
+- Water/LNT: camp 200+ ft from lakes/streams; near-water is a scenery plus but a shoreline-camping minus.
+- Treeline: Utah alpine zones start ~10,500-11,000 ft (lower south); below that expect forest cover, less view, more wind shelter.
+- Access: MVUM road class (passenger car / high-clearance / non-motorized) is a hard constraint, not a nice-to-know.
+- Prior use: an existing fire ring/cleared pad = already-impacted site, prefer it over a pristine one.
+- Season: alpine spots usually only open June/July-Sept (snowpack-dependent); low-desert is better shoulder-season, not summer.
+
+RULES:
+- Prefer the table below, but ONLY treat a row as an answer to a NAMED place (a specific trail, canyon, peak, cabin, route) if its forest/coordinates/description actually connect to that named place. Sharing a general tag with the question (wilderness, hammock-friendly, a view_type) is NOT enough to call it a match — a spot in a different canyon/drainage than the one asked about is not a match just because it's generally similar. If nothing in the table is actually connected to the specific place named, say that plainly (per the unverified-lead rule below) instead of substituting a loosely-similar row as if it answers the question.
+- Write like a person, not a database dump: describe access, views, and elevation in plain sentences using what the columns mean (e.g. "a short backpack in, open July through September, GPS is approximate") — never recite raw column names or values verbatim (e.g. never write "access_type is backpack_short" or "coord_precision is approx"). Do still cite the spot's real name exactly so it links correctly.
+- For a reference photo: describe terrain/openness/water/elevation cues in a sentence, then match to view_type/camp_type/notes using the same actually-connected standard above, not just a vibe match.
+- If the user names a specific place not confidently matched in the table (a named cabin, trail, canyon, landmark) — ${webSearchEnabled
+    ? 'you have a web_search tool. Use it for that specific place instead of guessing from memory, especially for anything obscure/hyperlocal a general model wouldn\'t reliably know. Cite what you find. Only fall back to a memory-based guess if search comes up empty, and mark that fallback per the rule below.'
+    : 'you do NOT have web search access right now, so don\'t guess a nearby-but-different place as if it answers what they asked (e.g. don\'t substitute a well-known lake in a different canyon for an obscure landmark you don\'t actually know, and don\'t substitute a table row just because it shares a tag). If you don\'t have reliable knowledge of that specific place, say so plainly instead of guessing something adjacent — a wrong confident answer is worse than admitting the gap. (The user can turn on web search in AI Guide Settings for a small per-search cost if they want this looked up for real.)'
+  }
+- Any suggestion that isn't an actually-connected table match — whether a memory-based guess or unconfirmed even after a search — must be prefixed "⚠️ Unverified lead (not in our database):" and must not invent specific-sounding details you don't actually have: no precise coordinates, and no fabricated turn-by-turn directions, mileage, road numbers, or "you'll see a pull-out near X" detail either — that level of specificity implies real knowledge you don't have and is worse than a vague pointer. Describe it at the level you actually know it (an area, drainage, or named trail) and tell the user to verify access/legality/conditions themselves.
+- If asked to "find a new spot," "something unique," or a spot that doesn't match anything already in the SPOT TABLE: check SCANNED CANDIDATES first (if present) — those are real, fresh terrain-scan results for the user's current map view, not something you found, so present them as "the scanner found..." not as your own discovery. Recommend the candidate(s) whose elevation/openness/wooded/water columns actually fit what the user described, using the same evaluation criteria above, and be upfront that they're computed from terrain shape and land-status only — unverified, not permitted campsites, not checked for legality beyond the scanner's own USFS/BLM-and-not-Wilderness-or-closure filter. If SCANNED CANDIDATES is empty or absent, tell the user to pan/zoom to the area they want and tap the star-shaped scan button (turns on 3D terrain automatically) so a real scan can run there, or, if they have web search enabled, use it for that specific place instead of guessing.
+- Never invent a brand-new latitude/longitude of your own. Every coordinate you give the user must come from either the SPOT TABLE or SCANNED CANDIDATES rows below — for anything else, describe the area/drainage/trail by name only (per the unverified-lead rule above) and let the user tap "Find a camp spot near here" or the scan button to get real coordinates, rather than fabricating one yourself.
+- Be concise; use a short list when comparing spots.
+- Remind users conditions (fire restrictions, closures, seasonal access) change — check with the land manager before heading out.
+
+SPOT TABLE:
+${spotsText}
+${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user's current map view — real DEM/land-status data, not curated or verified):\n${scanText}` : ''}`;
+    }
+
+    async function callAnthropic(settings, system, messages) {
+      const body = { model: settings.model, max_tokens: AI_MAX_TOKENS, system, messages };
+      // Opt-in only (see AI Guide Settings) — real cost per search on top
+      // of token usage, so it stays off by default. Capped at 2 searches
+      // per message to bound that cost; most single-place lookups only
+      // need one anyway.
+      if (settings.webSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }];
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': settings.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || 'Anthropic request failed');
+      return (data.content || []).map((b) => b.text || '').join('');
+    }
+
+    async function callOpenAICompatible(settings, system, messages, endpoint) {
+      const headers = { 'content-type': 'application/json' };
+      if (settings.apiKey) headers.authorization = `Bearer ${settings.apiKey}`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [{ role: 'system', content: system }, ...messages],
+          max_tokens: AI_MAX_TOKENS,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || 'Request failed');
+      return data?.choices?.[0]?.message?.content || '';
+    }
+
+    async function callGoogle(settings, system, messages) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent?key=${encodeURIComponent(settings.apiKey)}`;
+      const contents = messages.map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: Array.isArray(m.content)
+          ? m.content.map((c) => c.type === 'image' ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } } : { text: c.text })
+          : [{ text: m.content }],
+      }));
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { maxOutputTokens: AI_MAX_TOKENS } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || 'Google request failed');
+      return (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+    }
+
+    // Anthropic and OpenAI-compatible both take the same shape for a
+    // vision message (content: array of {type,text}/{type,image_url}
+    // blocks) except Anthropic's image block, so build one canonical
+    // internal shape — {type:'text',text} / {type:'image',source:{...}}
+    // — and translate per-provider at call time instead of in the caller.
+    function toOpenAIContent(content) {
+      if (!Array.isArray(content)) return content;
+      return content.map((c) => c.type === 'image'
+        ? { type: 'image_url', image_url: { url: `data:${c.source.media_type};base64,${c.source.data}` } }
+        : { type: 'text', text: c.text });
+    }
+
+    async function callAIProvider(settings, system, internalMessages) {
+      switch (settings.provider) {
+        case 'anthropic':
+          return callAnthropic(settings, system, internalMessages);
+        case 'openai':
+          return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.openai.com/v1/chat/completions');
+        case 'groq': {
+          // groq/compound is Groq's own tool-using system (web search,
+          // code execution, more) — same endpoint/request shape as a
+          // normal model, just a different model string, so swap it in
+          // for this call only rather than overwriting the user's saved
+          // model choice.
+          const groqSettings = settings.webSearch ? { ...settings, model: 'groq/compound' } : settings;
+          return callOpenAICompatible(groqSettings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.groq.com/openai/v1/chat/completions');
+        }
+        case 'custom':
+          if (!settings.baseUrl) throw new Error('Base URL is required for a custom provider');
+          return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), settings.baseUrl);
+        case 'google':
+          return callGoogle(settings, system, internalMessages);
+        default:
+          throw new Error('Unsupported provider');
+      }
+    }
+
+    function initAIGuide() {
+      const settingsBtn = document.getElementById('ai-settings-btn');
+      const setupBtn = document.getElementById('ai-setup-btn');
+      const notConfigured = document.getElementById('ai-not-configured');
+      const chatWrap = document.getElementById('ai-chat');
+      const messagesEl = document.getElementById('ai-messages');
+      const suggestionsEl = document.getElementById('ai-suggestions');
+      const textInput = document.getElementById('ai-text-input');
+      const sendBtn = document.getElementById('ai-send-btn');
+      const uploadBtn = document.getElementById('ai-upload-btn');
+      const imageInput = document.getElementById('ai-image-input');
+      const imagePreview = document.getElementById('ai-image-preview');
+      const imagePreviewImg = document.getElementById('ai-image-preview-img');
+      const imagePreviewName = document.getElementById('ai-image-preview-name');
+      const imageRemoveBtn = document.getElementById('ai-image-remove');
+
+      const providerSelect = document.getElementById('ai-provider-select');
+      const baseUrlField = document.getElementById('ai-base-url-field');
+      const baseUrlInput = document.getElementById('ai-base-url-input');
+      const keyInput = document.getElementById('ai-key-input');
+      const modelInput = document.getElementById('ai-model-input');
+      const modelHint = document.getElementById('ai-model-hint');
+      const keyLink = document.getElementById('ai-key-link');
+      const webSearchField = document.getElementById('ai-websearch-field');
+      const webSearchInput = document.getElementById('ai-websearch-input');
+      const webSearchCostHint = document.getElementById('ai-websearch-cost-hint');
+      const advancedDetails = document.getElementById('ai-advanced');
+      const settingsError = document.getElementById('ai-settings-error');
+      const settingsSave = document.getElementById('ai-settings-save');
+
+      let settings = loadAISettings();
+      let history = []; // internal-shape messages sent to the provider
+      let pendingImage = null; // { mimeType, base64, name }
+
+      function refreshChatVisibility() {
+        const configured = !!(settings.apiKey && settings.model && (settings.provider !== 'custom' || settings.baseUrl));
+        notConfigured.style.display = configured ? 'none' : '';
+        chatWrap.style.display = configured ? '' : 'none';
+      }
+
+      // Shared between filling the form from saved settings and reacting
+      // to the provider dropdown changing — both need the same "Other"
+      // needs a base URL + no single signup link, so the advanced section
+      // auto-opens and the key-link hint hides.
+      function updateProviderChrome(providerId) {
+        const cfg = AI_PROVIDERS[providerId];
+        baseUrlField.classList.toggle('show', cfg.needsBaseUrl);
+        modelHint.textContent = cfg.hint;
+        if (cfg.keyUrl) { keyLink.href = cfg.keyUrl; keyLink.style.display = ''; }
+        else keyLink.style.display = 'none';
+        if (cfg.needsBaseUrl) advancedDetails.open = true;
+        // Only shown for providers whose search mechanism has actually
+        // been checked against their real API/docs — OpenAI and Google
+        // both turned out to need a different endpoint entirely than the
+        // one this app calls, so they're left out rather than guessed at.
+        webSearchField.classList.toggle('show', !!cfg.webSearchCostHint);
+        webSearchCostHint.textContent = cfg.webSearchCostHint || '';
+      }
+
+      function fillSettingsForm() {
+        settings = loadAISettings(); // re-read from storage, not a possibly-stale in-memory copy
+        providerSelect.value = settings.provider;
+        baseUrlInput.value = settings.baseUrl || '';
+        keyInput.value = settings.apiKey || '';
+        modelInput.value = settings.model || AI_PROVIDERS[settings.provider].defaultModel;
+        webSearchInput.checked = !!settings.webSearch;
+        settingsError.textContent = '';
+        updateProviderChrome(settings.provider);
+      }
+
+      providerSelect.onchange = () => {
+        const cfg = AI_PROVIDERS[providerSelect.value];
+        updateProviderChrome(providerSelect.value);
+        if (cfg.defaultModel) modelInput.value = cfg.defaultModel;
+      };
+
+      for (const btn of document.querySelectorAll('.ai-url-quickfill button')) {
+        btn.onclick = () => { baseUrlInput.value = btn.dataset.url; settingsError.textContent = ''; };
+      }
+
+      settingsSave.onclick = () => {
+        const provider = providerSelect.value;
+        const apiKey = keyInput.value.trim();
+        const model = modelInput.value.trim() || AI_PROVIDERS[provider].defaultModel;
+        const baseUrl = baseUrlInput.value.trim();
+
+        if (!apiKey) { settingsError.textContent = 'Paste in an API key first.'; return; }
+        if (AI_PROVIDERS[provider].needsBaseUrl) {
+          if (!baseUrl) {
+            settingsError.textContent = 'This provider needs a Base URL — open "Advanced" above and fill it in, or tap one of the quick-fill buttons.';
+            advancedDetails.open = true;
+            return;
+          }
+          // Catch the most common failure mode (a mistyped URL) at save
+          // time with a specific message, instead of a generic "Failed to
+          // fetch" once they're mid-conversation with no way to tell a
+          // typo from a real network/CORS problem.
+          let parsed;
+          try { parsed = new URL(baseUrl); } catch { parsed = null; }
+          if (!parsed || parsed.protocol !== 'https:') {
+            settingsError.textContent = 'That Base URL doesn\'t look valid — it needs to start with https:// and be the full address, e.g. https://api.groq.com/openai/v1/chat/completions';
+            advancedDetails.open = true;
+            return;
+          }
+        }
+        if (!model) { settingsError.textContent = 'Open "Advanced" and enter a model name for this provider.'; advancedDetails.open = true; return; }
+
+        settingsError.textContent = '';
+        settings = { provider, apiKey, model, baseUrl, webSearch: !!AI_PROVIDERS[provider].webSearchCostHint && webSearchInput.checked };
+        saveAISettings(settings);
+        refreshChatVisibility();
+        closeSheets();
+        aiSheet.classList.add('open');
+        scrim.classList.add('open');
+      };
+
+      settingsBtn.onclick = () => { fillSettingsForm(); toggleSheet(aiSettingsSheet, null); };
+      setupBtn.onclick = () => { fillSettingsForm(); toggleSheet(aiSettingsSheet, null); };
+      document.getElementById('ai-settings-close').onclick = closeSheets;
+      // Overrides the plain top-level toggle wired before this function ran
+      // — also re-syncs from storage first, so the configured/not-configured
+      // view can't go stale relative to what's actually saved.
+      aiBtn.onclick = () => {
+        settings = loadAISettings();
+        refreshChatVisibility();
+        toggleSheet(aiSheet, aiBtn);
+      };
+
+      function addBubble(role, text, imageDataUrl) {
+        const el = document.createElement('div');
+        el.className = `ai-msg ${role}`;
+        if (imageDataUrl) {
+          const img = document.createElement('img');
+          img.className = 'ai-msg-image';
+          img.src = imageDataUrl;
+          img.alt = '';
+          el.append(img);
+        }
+        const textEl = document.createElement('span');
+        textEl.className = 'ai-msg-text';
+        textEl.textContent = text;
+        el.append(textEl);
+        messagesEl.append(el);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return el;
+      }
+
+      // Turns exact spot-name mentions in an assistant reply into tappable
+      // links that fly the map to that spot and open its real info card —
+      // same card as tapping its marker, built from the same live rows
+      // already fetched for the spot table, so no extra request. Returns
+      // null (caller keeps plain text) if nothing in the reply matches a
+      // real spot name.
+      async function linkifySpotNames(text) {
+        const rows = await getSpotsRows();
+        if (!rows.length) return null;
+        // Longest name first, so a name that's a substring of a longer one
+        // doesn't get matched short.
+        const byLength = [...rows].sort((a, b) => (b.name || '').length - (a.name || '').length).filter((r) => r.name);
+        const pattern = byLength.map((r) => r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+        if (!pattern) return null;
+        const parts = text.split(new RegExp(`(${pattern})`, 'gi'));
+        if (parts.length === 1) return null;
+        const byNameLower = new Map(rows.map((r) => [r.name.toLowerCase(), r]));
+        const frag = document.createDocumentFragment();
+        for (const part of parts) {
+          const row = part && byNameLower.get(part.toLowerCase());
+          if (row) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'ai-spot-link';
+            btn.textContent = part;
+            btn.onclick = () => openSpotFromAI(row);
+            frag.append(btn);
+          } else if (part) {
+            frag.append(document.createTextNode(part));
+          }
+        }
+        return frag;
+      }
+
+      async function upgradeBubbleWithSpotLinks(bubbleEl, text) {
+        const frag = await linkifySpotNames(text);
+        if (!frag) return;
+        const textEl = bubbleEl.querySelector('.ai-msg-text');
+        if (!textEl) return;
+        textEl.textContent = '';
+        textEl.append(frag);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function openSpotFromAI(row) {
+        const feature = { properties: row, geometry: { type: 'Point', coordinates: [row.lon, row.lat] } };
+        if (mapRef) mapRef.flyTo({ center: [row.lon, row.lat], zoom: Math.max(mapRef.getZoom(), 11), duration: 800 });
+        showGemSpotCard(feature);
+      }
+
+      imageInput.onchange = () => {
+        const file = imageInput.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result;
+          const base64 = dataUrl.split(',')[1];
+          pendingImage = { mimeType: file.type || 'image/jpeg', base64, name: file.name };
+          imagePreviewImg.src = dataUrl;
+          imagePreviewName.textContent = file.name;
+          imagePreview.classList.add('show');
+        };
+        reader.readAsDataURL(file);
+      };
+      uploadBtn.onclick = () => imageInput.click();
+      imageRemoveBtn.onclick = () => { pendingImage = null; imageInput.value = ''; imagePreview.classList.remove('show'); };
+
+      async function send(text) {
+        text = (text || '').trim();
+        if (!text && !pendingImage) return;
+        suggestionsEl.style.display = 'none';
+
+        const imageDataUrl = pendingImage ? `data:${pendingImage.mimeType};base64,${pendingImage.base64}` : null;
+        addBubble('user', text || '(reference photo)', imageDataUrl);
+
+        const content = [];
+        if (text) content.push({ type: 'text', text });
+        else content.push({ type: 'text', text: 'Here is a reference photo of the kind of spot I want. What do you see, and which of our spots (or what kind of unlisted spot) matches it best?' });
+        if (pendingImage) content.push({ type: 'image', source: { type: 'base64', media_type: pendingImage.mimeType, data: pendingImage.base64 } });
+        history.push({ role: 'user', content: content.length === 1 && !pendingImage ? text : content });
+
+        textInput.value = '';
+        pendingImage = null;
+        imageInput.value = '';
+        imagePreview.classList.remove('show');
+        sendBtn.disabled = true;
+        const typing = document.createElement('div');
+        typing.className = 'ai-typing';
+        typing.textContent = 'Thinking…';
+        messagesEl.append(typing);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+        try {
+          const spotsText = await getSpotsContextFor(text, settings.provider);
+          const reply = await callAIProvider(settings, aiSystemPrompt(spotsText, settings.webSearch, lastScanContextTextRef), history);
+          typing.remove();
+          const replyEl = addBubble('assistant', reply || '(empty response)');
+          history.push({ role: 'assistant', content: reply });
+          if (reply) upgradeBubbleWithSpotLinks(replyEl, reply); // async — bubble renders instantly, links pop in a beat later
+        } catch (err) {
+          typing.remove();
+          // "Failed to fetch" is the browser's generic label for "no
+          // response came back at all" — could be the provider being
+          // unreachable, a network/ad-blocker block, or (most common in
+          // practice) a bad Base URL — and unlike an auth/model error
+          // from the provider itself, there's no server-supplied message
+          // to show, so say what to actually go check instead of
+          // repeating the unhelpful raw text.
+          const msg = err.message === 'Failed to fetch'
+            ? 'Could not reach the AI service at all. If you picked "Other", double-check the Base URL in AI Guide Settings → Advanced. Otherwise this is likely a network block on this connection.'
+            : err.message;
+          const el = addBubble('error', `Something went wrong: ${msg}`);
+          el.classList.add('error');
+        } finally {
+          // A reference photo's base64 is easily 10-40k+ tokens by
+          // itself — without this, every later turn in the same
+          // conversation would resend it again on top of the spot
+          // table, compounding fast toward a free-tier cap. The image
+          // has already done its job (this turn's request used it), so
+          // strip it from history now and keep only a short text note.
+          history = history.map((m) => {
+            if (!Array.isArray(m.content)) return m;
+            if (!m.content.some((c) => c.type === 'image')) return m;
+            const textPart = m.content.find((c) => c.type === 'text')?.text || '';
+            return { ...m, content: `${textPart} [reference photo omitted here to save space]` };
+          });
+          // Cap total turns kept, too, so a long conversation doesn't
+          // keep growing the request size forever.
+          if (history.length > MAX_HISTORY_MESSAGES) history = history.slice(-MAX_HISTORY_MESSAGES);
+          sendBtn.disabled = false;
+        }
+      }
+
+      sendBtn.onclick = () => send(textInput.value);
+      textInput.onkeydown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(textInput.value); }
+      };
+      for (const btn of suggestionsEl.querySelectorAll('button')) {
+        btn.onclick = () => send(btn.dataset.q);
+      }
+
+      refreshChatVisibility();
+    }
+    initAIGuide();
 
     start().catch((error) => say(`Failed to load: ${error.message}`, 'error'));
   </script>
