@@ -501,11 +501,29 @@
       map.on('zoom', () => map.setMaxPitch(pitchCeilingForZoom()));
       map.setMaxPitch(pitchCeilingForZoom());
 
+      const TERRAIN_EXAGGERATION = 1.2;
+
+      // map.queryTerrainElevation() is not an absolute elevation lookup —
+      // it's built for the renderer's own camera math, so it returns the
+      // elevation *relative to whatever point is currently at the map's
+      // center* (reads exactly 0 there) and leaves the exaggeration
+      // multiplier baked in. That's why the on-screen numbers looked
+      // scrambled: real elevations minus a moving, unlabeled reference
+      // point, then scaled by 1.2x. Reading straight off the terrain
+      // object instead calls the same underlying DEM lookup one layer
+      // earlier, before either of those apply, and dividing out the
+      // exaggeration recovers the real figure.
+      function absoluteElevation(lngLat) {
+        if (!map.terrain) return null;
+        const raw = map.terrain.getElevationForLngLatZoom(maplibregl.LngLat.convert(lngLat), map.transform.tileZoom);
+        return raw == null ? null : raw / TERRAIN_EXAGGERATION;
+      }
+
       let terrainOn = false;
       function setTerrainMode(on) {
         terrainOn = on;
         terrainBtn.classList.toggle('active', on);
-        map.setTerrain(on ? { source: 'terrain', exaggeration: 1.2 } : null);
+        map.setTerrain(on ? { source: 'terrain', exaggeration: TERRAIN_EXAGGERATION } : null);
         if (on) {
           map.easeTo({ pitch: Math.min(55, pitchCeilingForZoom()), bearing: -20, duration: 900 });
           elevationHud.classList.add('visible');
@@ -520,7 +538,7 @@
       terrainBtn.onclick = () => setTerrainMode(!terrainOn);
 
       // Live elevation under the map center, onX-style — only meaningful
-      // once setTerrain() is active (queryTerrainElevation reads the
+      // once setTerrain() is active (absoluteElevation() reads the
       // displaced mesh, not the flat 2D plane). Updated on 'moveend'
       // rather than every 'move' frame so it doesn't add per-frame work
       // while the camera is already busy animating/rendering terrain.
@@ -536,7 +554,7 @@
       }
       function updateElevationReadout() {
         if (!terrainOn) return;
-        elevationReadout.textContent = formatElevation(map.queryTerrainElevation(map.getCenter()));
+        elevationReadout.textContent = formatElevation(absoluteElevation(map.getCenter()));
       }
       map.on('moveend', updateElevationReadout);
 
@@ -557,7 +575,7 @@
           for (let j = 0; j <= HIGH_POINT_GRID; j++) {
             const lng = w + (e - w) * (i / HIGH_POINT_GRID);
             const lat = s + (n - s) * (j / HIGH_POINT_GRID);
-            const elevation = map.queryTerrainElevation([lng, lat]);
+            const elevation = absoluteElevation([lng, lat]);
             if (elevation != null) samples.set(`${i},${j}`, { i, j, lng, lat, elevation });
           }
         }
