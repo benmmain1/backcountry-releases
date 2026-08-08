@@ -463,7 +463,7 @@
         center: centre,
         zoom: 7.4,
         pitch: 0,
-        maxPitch: 65,
+        maxPitch: 80,
         hash: true,
         attributionControl: { compact: true },
       });
@@ -490,13 +490,15 @@
       // A near-horizon pitch shows ground for miles in every direction
       // regardless of zoom — over rugged canyon country that's a lot of
       // terrain/imagery tiles in view at once, which is what crashed the
-      // tab. So both levers stay conservative: the pitch ceiling scales
-      // with zoom (a full tilt is only reachable once zoomed in enough
-      // that the horizon isn't also the next county over) *and* the
-      // ceiling itself tops out well short of true horizon-grazing.
+      // tab the first time this shipped. The risk is concentrated at wide
+      // zoom, where even the *foreground* right under the camera already
+      // spans a huge area — so the ceiling stays low there, but ramps up
+      // to a true near-horizontal view once zoomed in close enough (a
+      // single alpine basin, say) that tilting all the way over doesn't
+      // multiply the tile footprint the same way.
       function pitchCeilingForZoom() {
         const z = map.getZoom();
-        return Math.round(Math.min(65, Math.max(35, (z - 6) * 6 + 30)));
+        return Math.round(Math.min(80, Math.max(35, (z - 6) * 6.5 + 25)));
       }
       map.on('zoom', () => map.setMaxPitch(pitchCeilingForZoom()));
       map.setMaxPitch(pitchCeilingForZoom());
