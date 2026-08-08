@@ -220,6 +220,11 @@
     padding: 9px 15px; background: var(--border); color: var(--text);
     text-decoration: none; font-weight: 700; font-size: 13.5px; border-radius: 999px;
   }
+  #info-ask-ai {
+    display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%;
+    margin: 2px 0 14px; padding: 11px; border: none; border-radius: 12px;
+    background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 14px; cursor: pointer;
+  }
 
   /* ---- AI Trail Guide ---- */
   #ai-sheet { display: flex; flex-direction: column; }
@@ -384,6 +389,10 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
+    <button id="info-ask-ai" type="button">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg>
+      Ask AI about this spot
+    </button>
     <div id="info-body"></div>
   </div>
 
@@ -1056,6 +1065,21 @@
     // but needs this to fly to and open a spot a reply links to.
     let mapRef = null;
 
+    // Reuses aiBtn's own click handler (wired up in initAIGuide) rather
+    // than duplicating its open/refresh-from-storage logic here — safe to
+    // call from an info card since opening one already closed the AI
+    // sheet if it was open, so this always finds it closed and toggles
+    // it back open rather than accidentally closing it.
+    function askAIAbout(title) {
+      aiBtn.click();
+      const input = document.getElementById('ai-text-input');
+      if (input) {
+        input.value = `About ${title || 'this spot'}: `;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+
     function openInfoCard(kicker, title, buildBody, photoCoord, curatedPhoto) {
       const token = ++infoCardToken;
       document.getElementById('info-kicker').textContent = kicker;
@@ -1064,6 +1088,7 @@
       body.innerHTML = '';
       buildBody(body);
       if (photoCoord) attachPhotoGallery(body, photoCoord, token, curatedPhoto);
+      document.getElementById('info-ask-ai').onclick = () => askAIAbout(title);
       closeSheets();
       infoSheet.classList.add('open');
       scrim.classList.add('open');
