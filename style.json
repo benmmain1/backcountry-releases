@@ -22,7 +22,8 @@
     },
     "spots": {
       "type": "vector",
-      "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/spots-ut-pilot.pmtiles"
+      "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/spots-ut-pilot.pmtiles",
+      "promoteId": "id"
     },
     "satellite": {
       "type": "raster",
@@ -1158,8 +1159,8 @@
           1,
           "#1e7a4a"
         ],
-        "circle-stroke-width": 1.2,
-        "circle-stroke-color": "#ffffff"
+        "circle-stroke-width": ["case", ["==", ["feature-state", "needsReview"], true], 2.5, 1.2],
+        "circle-stroke-color": ["case", ["==", ["feature-state", "needsReview"], true], "#f5a623", "#ffffff"]
       }
     }
   ]

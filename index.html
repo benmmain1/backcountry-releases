@@ -96,6 +96,12 @@
     padding: 5px 12px; border-radius: 999px; cursor: pointer;
   }
   .unit-btn.active { background: var(--accent); color: var(--accent-ink); }
+  .panel-btn {
+    display: block; width: 100%; margin: 8px 0 4px; padding: 10px 14px;
+    border: none; border-radius: 10px; background: var(--accent); color: var(--accent-ink);
+    font-size: 13.5px; font-weight: 700; cursor: pointer;
+  }
+  .panel-btn:disabled { opacity: 0.55; cursor: default; }
   #elevation-readout {
     background: rgba(20,22,18,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700;
@@ -1004,6 +1010,164 @@
         }
       };
 
+      // Spot Insights: enriches the existing 82-site "hidden gem" dataset
+      // (real slope_degrees / flat_area_m2 / legal_reason already computed
+      // by a separate, more rigorous pipeline than anything client-side
+      // here can match - checked directly by decoding the archive) with
+      // two things that pipeline doesn't currently produce: a view-type
+      // tag and a rough camp-type suitability tag, plus a cross-check
+      // against this app's own terrain data as a second-opinion flag
+      // rather than an override. Never deletes or overrides the pipeline's
+      // own numbers - it only adds runtime feature-state alongside them.
+      //
+      // Tree/water signal comes from USGS/MRLC's public NLCD (National
+      // Land Cover Database) map service - free, keyless, and actually
+      // CORS-enabled (checked directly against real coordinates: Utah
+      // Lake correctly returned the "Open Water" class) - giving a real
+      // percent-tree-canopy figure and land-cover class instead of
+      // guessing from satellite image color.
+      const NLCD_WMS = 'https://www.mrlc.gov/geoserver/mrlc_display/wms';
+      const NLCD_LAND_COVER_LAYER = 'NLCD_2021_Land_Cover_L48';
+      const NLCD_CANOPY_LAYER = 'mrlc_display:nlcd_tcc_conus_2011_v2021-4';
+      // https://www.mrlc.gov/data/legends/national-land-cover-database-class-legend-and-description
+      const NLCD_WATER_CLASSES = new Set([11]);
+      const NLCD_FOREST_CLASSES = new Set([41, 42, 43]);
+      const nlcdCache = new Map();
+
+      async function queryNlcd(layer, [lng, lat]) {
+        const key = `${layer}:${lng.toFixed(5)},${lat.toFixed(5)}`;
+        if (nlcdCache.has(key)) return nlcdCache.get(key);
+        const d = 0.0006; // GetFeatureInfo needs a small bbox around the point, not just a point
+        const bbox = [lat - d, lng - d, lat + d, lng + d].join(',');
+        const url = `${NLCD_WMS}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo&LAYERS=${encodeURIComponent(layer)}&QUERY_LAYERS=${encodeURIComponent(layer)}&CRS=EPSG:4326&BBOX=${bbox}&WIDTH=101&HEIGHT=101&I=50&J=50&INFO_FORMAT=application/json`;
+        const result = fetch(url)
+          .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`NLCD ${res.status}`))))
+          .then((data) => data.features?.[0]?.properties?.PALETTE_INDEX ?? null)
+          .catch((err) => { console.warn('NLCD lookup failed', err); return null; });
+        nlcdCache.set(key, result);
+        return result;
+      }
+
+      // A rough slope estimate from the same elevation-swing sample used
+      // for the camp scanner's flatness check, converted to degrees, as a
+      // second opinion against the pipeline's own slope_degrees - not a
+      // replacement for it. ROUGHNESS_SAMPLE_DEG is the sample ring's
+      // radius in degrees; converting to meters gives the "run" for a
+      // rise/run slope estimate.
+      function roughnessToSlopeDegrees(roughnessMeters, lat) {
+        if (roughnessMeters == null) return null;
+        const { perDegLat } = metersToDegrees(lat);
+        const runMeters = ROUGHNESS_SAMPLE_DEG * perDegLat;
+        return Math.atan(roughnessMeters / runMeters) * (180 / Math.PI);
+      }
+
+      async function enrichSpot(feature) {
+        const [lng, lat] = feature.geometry.coordinates;
+        const props = feature.properties;
+
+        const [landCover, canopyPct] = await Promise.all([
+          queryNlcd(NLCD_LAND_COVER_LAYER, [lng, lat]),
+          queryNlcd(NLCD_CANOPY_LAYER, [lng, lat]),
+        ]);
+        const wooded = NLCD_FOREST_CLASSES.has(landCover) || (canopyPct != null && canopyPct >= 30);
+        const nearWater = NLCD_WATER_CLASSES.has(landCover);
+
+        const openness = opennessMeters([lng, lat]);
+        const roughness = localRoughness([lng, lat]);
+        const openView = openness != null && openness >= 300;
+        const panoramic = openness != null && openness >= 700;
+
+        const viewTags = [];
+        if (nearWater) viewTags.push('water');
+        if (panoramic) viewTags.push('panoramic');
+        else if (openView) viewTags.push('open-valley');
+        if (wooded) viewTags.push('wooded');
+        if (!viewTags.length) viewTags.push('sheltered');
+
+        // flat_area_m2 and slope_degrees are the pipeline's own verified
+        // numbers - reused here, not recomputed. Hammock camping doesn't
+        // need flat ground the way a tent or trailer does, so it's keyed
+        // on tree cover instead.
+        const campTags = [];
+        if ((props.flat_area_m2 || 0) >= 20) campTags.push('tent');
+        if (wooded) campTags.push('hammock');
+        if ((props.flat_area_m2 || 0) >= 500) campTags.push('trailer');
+
+        const roughnessSlope = roughnessToSlopeDegrees(roughness, lat);
+        const slopeDelta = roughnessSlope != null && props.slope_degrees != null
+          ? Math.abs(roughnessSlope - props.slope_degrees) : null;
+        // A generous threshold - this app's DEM sampling is coarser than
+        // whatever produced the pipeline's own figure, so this is meant to
+        // catch real disagreements, not add noise from measurement error.
+        const needsReview = slopeDelta != null && slopeDelta > 8;
+
+        return { id: props.id, viewTags, campTags, needsReview };
+      }
+
+      let spotEnrichment = new Map(); // id -> result, kept for the filter UI
+
+      async function analyzeSpots() {
+        if (!terrainOn) {
+          say('Turn on 3D terrain first — spot analysis reads real elevation data off the terrain mesh', 'warn');
+          return;
+        }
+        const rawFeatures = map.querySourceFeatures('spots', { sourceLayer: 'spots' });
+        const byId = new Map();
+        for (const f of rawFeatures) {
+          if (f.geometry?.type === 'Point' && !byId.has(f.properties.id)) byId.set(f.properties.id, f);
+        }
+        const uniqueFeatures = [...byId.values()];
+        if (!uniqueFeatures.length) {
+          say('No spots loaded in view yet — pan/zoom over the Moab · Manti-La Sal pilot area first', 'warn');
+          return;
+        }
+
+        const analyzeSpotsBtn = document.getElementById('analyze-spots-btn');
+        if (analyzeSpotsBtn) analyzeSpotsBtn.disabled = true;
+        say(`Analyzing ${uniqueFeatures.length} spot${uniqueFeatures.length === 1 ? '' : 's'} — checking terrain + government land-cover data…`);
+
+        const CONCURRENCY = 6;
+        for (let i = 0; i < uniqueFeatures.length; i += CONCURRENCY) {
+          const batch = uniqueFeatures.slice(i, i + CONCURRENCY);
+          const results = await Promise.all(batch.map((f) => enrichSpot(f).catch((err) => {
+            console.warn('Spot enrichment failed', err);
+            return null;
+          })));
+          for (const r of results) {
+            if (!r) continue;
+            spotEnrichment.set(r.id, r);
+            map.setFeatureState({ source: 'spots', sourceLayer: 'spots', id: r.id }, {
+              needsReview: r.needsReview,
+              openValley: r.viewTags.includes('open-valley') || r.viewTags.includes('panoramic'),
+              panoramic: r.viewTags.includes('panoramic'),
+              waterView: r.viewTags.includes('water'),
+              wooded: r.viewTags.includes('wooded'),
+              tentOk: r.campTags.includes('tent'),
+              hammockOk: r.campTags.includes('hammock'),
+              trailerOk: r.campTags.includes('trailer'),
+            });
+          }
+        }
+
+        if (analyzeSpotsBtn) analyzeSpotsBtn.disabled = false;
+        for (const box of document.querySelectorAll('.spot-filter-checkbox')) box.disabled = false;
+        const flagged = [...spotEnrichment.values()].filter((r) => r.needsReview).length;
+        say(`Analyzed ${spotEnrichment.size} spot${spotEnrichment.size === 1 ? '' : 's'}${flagged ? ` — ${flagged} flagged for a second look` : ''}`);
+        applySpotFilters();
+      }
+
+      const spotFilterState = { view: new Set(), camp: new Set() };
+      function applySpotFilters() {
+        const clauses = [];
+        if (spotFilterState.view.size) {
+          clauses.push(['any', ...[...spotFilterState.view].map((tag) => ['==', ['feature-state', tag], true])]);
+        }
+        if (spotFilterState.camp.size) {
+          clauses.push(['any', ...[...spotFilterState.camp].map((tag) => ['==', ['feature-state', tag], true])]);
+        }
+        map.setFilter('spots', clauses.length ? ['all', ...clauses] : null);
+      }
+
       map.on('error', (event) => {
         say(`Map error: ${event.error?.message ?? 'unknown'}`, 'error');
         console.error(event.error);
@@ -1029,6 +1193,7 @@
         regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
         buildLayerPanel(map, style, manifest);
+        buildSpotInsightsPanel();
         setupInfoClicks(map, style);
 
         const regions = await loadAvailableRegions(manifest);
@@ -1340,6 +1505,52 @@
       }, centroidOf(feature.geometry));
     }
 
+    const SPOT_STYLE = { color: '#1e7a4a', icon: ICON_SVG.tent };
+    const VIEW_TAG_LABELS = { 'open-valley': 'Open valley view', panoramic: 'Panoramic view', water: 'Near water', wooded: 'Wooded / shaded', sheltered: 'Sheltered' };
+
+    function showSpotCard(feature) {
+      const props = feature.properties;
+      setInfoIcon(SPOT_STYLE);
+      openInfoCard('Camp Spot', props.unit_name || 'Dispersed Camp Spot', (body) => {
+        const badges = document.createElement('div');
+        badges.className = 'info-badges';
+        badges.append(badge(`Score ${(props.score * 100).toFixed(0)}`));
+        if (props.slope_degrees != null) badges.append(badge(`${props.slope_degrees.toFixed(1)}° slope`));
+        if (props.flat_area_m2) badges.append(badge(`${Math.round(props.flat_area_m2).toLocaleString()} m² pad`));
+        body.append(badges);
+
+        const enrichment = spotEnrichment.get(props.id);
+        if (enrichment) {
+          if (enrichment.needsReview) {
+            body.append(paragraph('⚠ This app\'s own rough terrain check disagrees with this spot\'s recorded slope — worth a second look, not necessarily wrong.', 'info-desc'));
+          }
+          const tagBadges = document.createElement('div');
+          tagBadges.className = 'info-badges';
+          for (const tag of enrichment.viewTags) tagBadges.append(badge(VIEW_TAG_LABELS[tag] || tag));
+          for (const tag of enrichment.campTags) tagBadges.append(badge(tag === 'tent' ? 'Tent OK' : tag === 'hammock' ? 'Hammock OK' : 'Trailer OK', 'status-open'));
+          body.append(tagBadges);
+        } else {
+          body.append(paragraph('Run "Analyze spots in view" (Map Layers → Spot Insights) for view-type and camp-type tags.', 'info-desc'));
+        }
+
+        const facts = document.createElement('div');
+        facts.className = 'info-facts';
+        [
+          factRow('Stay limit', props.stay_limit_days ? `${props.stay_limit_days} days` : null),
+          factRow('Access road', props.source_route),
+          factRow('Pad notes', props.pad_reason),
+        ].forEach((row) => row && facts.append(row));
+        if (facts.children.length) body.append(facts);
+
+        if (props.legal_reason) {
+          body.append(sectionTitle('Legal basis'));
+          body.append(paragraph(props.legal_reason));
+        }
+        const link = externalLink(props.legal_source, 'Source regulation ↗');
+        if (link) body.append(link);
+      }, feature.geometry.coordinates);
+    }
+
     function setupInfoClicks(map, style) {
       const styleIds = new Set(style.layers.map((l) => l.id));
       // The label layer shares the same source features as the dot, so a
@@ -1347,9 +1558,10 @@
       // to the same rec site as a tap on the tiny circle itself.
       const recLayers = ['developed-rec', 'developed-rec-label'].filter((id) => styleIds.has(id));
       const trailLayers = ['trails'].filter((id) => styleIds.has(id));
-      if (!recLayers.length && !trailLayers.length) return;
+      const spotLayers = ['spots'].filter((id) => styleIds.has(id));
+      if (!recLayers.length && !trailLayers.length && !spotLayers.length) return;
 
-      for (const id of [...recLayers, ...trailLayers]) {
+      for (const id of [...recLayers, ...trailLayers, ...spotLayers]) {
         map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -1362,6 +1574,10 @@
           [e.point.x - 16, e.point.y - 16],
           [e.point.x + 16, e.point.y + 16],
         ];
+        if (spotLayers.length) {
+          const [spot] = map.queryRenderedFeatures(hitBox, { layers: spotLayers });
+          if (spot) return showSpotCard(spot);
+        }
         if (recLayers.length) {
           const [rec] = map.queryRenderedFeatures(hitBox, { layers: recLayers });
           if (rec) return showRecSiteCard(rec);
@@ -1572,6 +1788,67 @@
       note.className = 'note';
       note.textContent = 'Colors above match the map — this is also your legend.';
       body.prepend(note);
+    }
+
+    function buildSpotInsightsPanel() {
+      if (!document.querySelector('#layers-body')) return;
+      const body = document.getElementById('layers-body');
+      const wrap = document.createElement('div');
+      wrap.className = 'group';
+
+      const heading = document.createElement('h2');
+      heading.textContent = 'Spot Insights';
+      wrap.append(heading);
+
+      const note = document.createElement('p');
+      note.className = 'group-note';
+      note.textContent = "Adds a view-type and camp-type tag to each indexed camp spot, from real terrain shape plus government tree-canopy/water data — alongside that dataset's own verified slope and legal info, not instead of it. Needs 3D terrain on, and spots loaded in view (pan over the pilot area first).";
+      wrap.append(note);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'analyze-spots-btn';
+      btn.className = 'panel-btn';
+      btn.textContent = 'Analyze spots in view';
+      btn.onclick = analyzeSpots;
+      wrap.append(btn);
+
+      const filterDefs = [
+        { group: 'view', key: 'openValley', label: 'Open valley view' },
+        { group: 'view', key: 'panoramic', label: 'Panoramic (360°)' },
+        { group: 'view', key: 'waterView', label: 'Near water' },
+        { group: 'view', key: 'wooded', label: 'Wooded / shaded' },
+        { group: 'camp', key: 'tentOk', label: 'Tent-friendly' },
+        { group: 'camp', key: 'hammockOk', label: 'Hammock-friendly (has trees)' },
+        { group: 'camp', key: 'trailerOk', label: 'Trailer / RV-friendly (large pad)' },
+      ];
+      for (const groupName of ['view', 'camp']) {
+        const sub = document.createElement('p');
+        sub.className = 'group-note';
+        sub.style.marginTop = groupName === 'camp' ? '10px' : '6px';
+        sub.textContent = groupName === 'view' ? 'Filter by view type (run analysis first)' : 'Filter by camp type (run analysis first)';
+        wrap.append(sub);
+        for (const def of filterDefs.filter((d) => d.group === groupName)) {
+          const row = document.createElement('label');
+          row.className = 'row';
+          const box = document.createElement('input');
+          box.type = 'checkbox';
+          box.className = 'spot-filter-checkbox';
+          box.disabled = true; // no feature-state exists until analysis runs — checking one now would just hide everything
+          box.onchange = () => {
+            const set = spotFilterState[def.group];
+            if (box.checked) set.add(def.key); else set.delete(def.key);
+            applySpotFilters();
+          };
+          const label = document.createElement('span');
+          label.className = 'label';
+          label.textContent = def.label;
+          row.append(box, label);
+          wrap.append(row);
+        }
+      }
+
+      body.append(wrap);
     }
 
     start().catch((error) => say(`Failed to load: ${error.message}`, 'error'));
