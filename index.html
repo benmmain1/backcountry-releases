@@ -283,6 +283,13 @@
     flex: 1; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border); background: none;
     color: var(--accent); font-weight: 700; font-size: 12px; cursor: pointer;
   }
+  #ai-websearch-field { display: none; }
+  #ai-websearch-field.show { display: block; }
+  #ai-websearch-field .ai-checkbox-row {
+    display: flex; align-items: center; gap: 8px; text-transform: none;
+    font-size: 13.5px; font-weight: 600; color: var(--text); letter-spacing: normal; margin-bottom: 4px;
+  }
+  #ai-websearch-field .ai-checkbox-row input { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
   #ai-settings-error { color: #c8281e; min-height: 0; }
   #ai-settings-error:empty { display: none; margin: 0; }
 
@@ -448,6 +455,10 @@
         <p class="hint" id="ai-model-hint"></p>
       </div>
     </details>
+    <div class="field" id="ai-websearch-field">
+      <label class="ai-checkbox-row"><input type="checkbox" id="ai-websearch-input" /> Let it search the web for obscure/specific places</label>
+      <p class="hint">Off by default to keep this free. When a place isn't in our spot database and isn't something well-known, the AI normally has to guess from memory — this lets it actually look it up instead, at a small real cost (~1¢ per 100 searches) charged to your API key on top of normal usage.</p>
+    </div>
     <p class="hint" id="ai-settings-error"></p>
     <button type="button" class="save-btn" id="ai-settings-save">Save</button>
   </div>
@@ -1558,12 +1569,13 @@
     const AI_MAX_TOKENS = 1000;
     const MAX_HISTORY_MESSAGES = 12; // ~6 exchanges kept; older ones drop off rather than growing every request forever
 
+    const AI_SETTINGS_DEFAULT = { provider: 'anthropic', apiKey: '', model: AI_PROVIDERS.anthropic.defaultModel, baseUrl: '', webSearch: false };
     function loadAISettings() {
       try {
         const raw = localStorage.getItem(AI_SETTINGS_KEY);
-        return raw ? JSON.parse(raw) : { provider: 'anthropic', apiKey: '', model: AI_PROVIDERS.anthropic.defaultModel, baseUrl: '' };
+        return raw ? { ...AI_SETTINGS_DEFAULT, ...JSON.parse(raw) } : { ...AI_SETTINGS_DEFAULT };
       } catch {
-        return { provider: 'anthropic', apiKey: '', model: AI_PROVIDERS.anthropic.defaultModel, baseUrl: '' };
+        return { ...AI_SETTINGS_DEFAULT };
       }
     }
     function saveAISettings(s) { localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(s)); }
@@ -1659,7 +1671,7 @@
       return buildSpotsContext(rows, queryText, SPOTS_TOKEN_BUDGET[provider] ?? 6000);
     }
 
-    function aiSystemPrompt(spotsText) {
+    function aiSystemPrompt(spotsText, webSearchEnabled) {
       return `You are the Backcountry AI Trail Guide, an expert on dispersed and backcountry camping in Utah. Below is a table of real, curated spots (pipe-delimited, column order in the header), pulled live from this app's database. It may be a partial, relevance-ranked subset, not the whole database — see the note at the end of the table if spots were left out.
 
 HOW TO EVALUATE A SPOT (use this for matching existing spots AND any unverified lead you propose):
@@ -1674,7 +1686,11 @@ HOW TO EVALUATE A SPOT (use this for matching existing spots AND any unverified 
 RULES:
 - Prefer the table below. Cite the exact name, access_type, view_type, and coord_precision.
 - For a reference photo: describe terrain/openness/water/elevation cues in a sentence, then match to view_type/camp_type/notes.
-- No good match? Suggest a general area from your own knowledge, prefixed "⚠️ Unverified lead (not in our database):" — never invent precise coordinates or claim it as confirmed. Name it by drainage/trailhead/area, and tell the user to verify access/legality/conditions themselves.
+- If the user names a specific place not in the table (a named cabin, trail, canyon, landmark) — ${webSearchEnabled
+    ? 'you have a web_search tool. Use it for that specific place instead of guessing from memory, especially for anything obscure/hyperlocal a general model wouldn\'t reliably know. Cite what you find. Only fall back to a memory-based guess if search comes up empty, and mark that fallback per the rule below.'
+    : 'you do NOT have web search access right now, so don\'t guess a nearby-but-different place as if it answers what they asked (e.g. don\'t substitute a well-known lake in a different canyon for an obscure landmark you don\'t actually know). If you don\'t have reliable knowledge of that specific place, say so plainly instead of guessing something adjacent — a wrong confident answer is worse than admitting the gap. (The user can turn on web search in AI Guide Settings for a small per-search cost if they want this looked up for real.)'
+  }
+- Any suggestion not from the table above — whether a memory-based guess or unconfirmed even after a search — must be prefixed "⚠️ Unverified lead (not in our database):" and never claim precise coordinates as confirmed. Tell the user to verify access/legality/conditions themselves.
 - Be concise; use a short list when comparing spots.
 - Remind users conditions (fire restrictions, closures, seasonal access) change — check with the land manager before heading out.
 
@@ -1683,6 +1699,12 @@ ${spotsText}`;
     }
 
     async function callAnthropic(settings, system, messages) {
+      const body = { model: settings.model, max_tokens: AI_MAX_TOKENS, system, messages };
+      // Opt-in only (see AI Guide Settings) — real cost per search on top
+      // of token usage, so it stays off by default. Capped at 2 searches
+      // per message to bound that cost; most single-place lookups only
+      // need one anyway.
+      if (settings.webSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }];
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -1691,7 +1713,7 @@ ${spotsText}`;
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
-        body: JSON.stringify({ model: settings.model, max_tokens: AI_MAX_TOKENS, system, messages }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || 'Anthropic request failed');
@@ -1786,6 +1808,8 @@ ${spotsText}`;
       const modelInput = document.getElementById('ai-model-input');
       const modelHint = document.getElementById('ai-model-hint');
       const keyLink = document.getElementById('ai-key-link');
+      const webSearchField = document.getElementById('ai-websearch-field');
+      const webSearchInput = document.getElementById('ai-websearch-input');
       const advancedDetails = document.getElementById('ai-advanced');
       const settingsError = document.getElementById('ai-settings-error');
       const settingsSave = document.getElementById('ai-settings-save');
@@ -1811,6 +1835,11 @@ ${spotsText}`;
         if (cfg.keyUrl) { keyLink.href = cfg.keyUrl; keyLink.style.display = ''; }
         else keyLink.style.display = 'none';
         if (cfg.needsBaseUrl) advancedDetails.open = true;
+        // Only verified working against Anthropic's API so far — other
+        // providers have their own similar tools, but each needs checking
+        // against the live API before being offered here, same as every
+        // other assumption that turned out wrong tonight without checking.
+        webSearchField.classList.toggle('show', providerId === 'anthropic');
       }
 
       function fillSettingsForm() {
@@ -1818,6 +1847,7 @@ ${spotsText}`;
         baseUrlInput.value = settings.baseUrl || '';
         keyInput.value = settings.apiKey || '';
         modelInput.value = settings.model || AI_PROVIDERS[settings.provider].defaultModel;
+        webSearchInput.checked = !!settings.webSearch;
         settingsError.textContent = '';
         updateProviderChrome(settings.provider);
       }
@@ -1860,7 +1890,7 @@ ${spotsText}`;
         if (!model) { settingsError.textContent = 'Open "Advanced" and enter a model name for this provider.'; advancedDetails.open = true; return; }
 
         settingsError.textContent = '';
-        settings = { provider, apiKey, model, baseUrl };
+        settings = { provider, apiKey, model, baseUrl, webSearch: provider === 'anthropic' && webSearchInput.checked };
         saveAISettings(settings);
         refreshChatVisibility();
         closeSheets();
@@ -1984,7 +2014,7 @@ ${spotsText}`;
 
         try {
           const spotsText = await getSpotsContextFor(text, settings.provider);
-          const reply = await callAIProvider(settings, aiSystemPrompt(spotsText), history);
+          const reply = await callAIProvider(settings, aiSystemPrompt(spotsText, settings.webSearch), history);
           typing.remove();
           const replyEl = addBubble('assistant', reply || '(empty response)');
           history.push({ role: 'assistant', content: reply });
