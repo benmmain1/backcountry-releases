@@ -882,9 +882,18 @@
         return total / RAY_COUNT;
       }
 
+      // Reads the same checkboxes the Spot Insights filters use — "what
+      // am I looking for" means the same thing whether you're filtering
+      // the existing verified spots or scanning for a brand new one.
       async function scanForCampSpots() {
         const bounds = map.getBounds();
         const w = bounds.getWest(), e = bounds.getEast(), s = bounds.getSouth(), n = bounds.getNorth();
+        const wantWater = spotFilterState.view.has('waterView');
+        const wantWooded = spotFilterState.view.has('wooded') || spotFilterState.camp.has('hammockOk');
+        const wantPanoramic = spotFilterState.view.has('panoramic');
+        const wantOpenValley = spotFilterState.view.has('openValley');
+        const wantTrailer = spotFilterState.camp.has('trailerOk');
+        const needsNlcd = wantWater || wantWooded;
 
         const wildernessWasHidden = map.getLayoutProperty('wilderness', 'visibility') !== 'visible';
         if (wildernessWasHidden) map.setLayoutProperty('wilderness', 'visibility', 'visible');
@@ -905,16 +914,49 @@
 
         if (wildernessWasHidden) map.setLayoutProperty('wilderness', 'visibility', 'none');
 
-        const scored = [];
+        // Pass 1: cheap, local, synchronous terrain checks only — no
+        // network yet. A trailer/RV preference wants a much larger flat
+        // footprint than a tent does, so it gets a tighter roughness cap
+        // rather than a separate area measurement this scanner doesn't have.
+        const roughnessLimit = wantTrailer ? 12 : 25;
+        const terrainSurvivors = [];
         for (let idx = 0; idx < candidates.length; idx++) {
+          if (idx % 3 === 0) await new Promise((r) => setTimeout(r, 0)); // finer rays cost more per candidate now — yield more often
           const c = candidates[idx];
           const roughness = localRoughness([c.lng, c.lat]);
           const openness = opennessMeters([c.lng, c.lat]);
-          if (roughness != null && openness != null && roughness <= 25) { // 25m+ swing is too uneven to pitch a tent
-            scored.push({ ...c, roughness, openness, score: openness - roughness * 15 });
-          }
-          if (idx % 3 === 0) await new Promise((r) => setTimeout(r, 0)); // finer rays cost more per candidate now — yield more often
+          if (roughness == null || openness == null || roughness > roughnessLimit) continue;
+          if (wantPanoramic && openness < 700) continue;
+          if (wantOpenValley && !wantPanoramic && openness < 300) continue;
+          terrainSurvivors.push({ ...c, roughness, openness });
         }
+
+        // Pass 2: only the terrain survivors get the network-backed NLCD
+        // check (water/tree cover), batched with limited concurrency —
+        // same courtesy toward the free government service as the spot
+        // enrichment pass.
+        let nlcdSurvivors = terrainSurvivors;
+        if (needsNlcd) {
+          nlcdSurvivors = [];
+          const CONCURRENCY = 6;
+          for (let i = 0; i < terrainSurvivors.length; i += CONCURRENCY) {
+            const batch = terrainSurvivors.slice(i, i + CONCURRENCY);
+            const results = await Promise.all(batch.map(async (c) => {
+              const [landCover, canopyPct] = await Promise.all([
+                queryNlcd(NLCD_LAND_COVER_LAYER, [c.lng, c.lat]),
+                queryNlcd(NLCD_CANOPY_LAYER, [c.lng, c.lat]),
+              ]);
+              const wooded = NLCD_FOREST_CLASSES.has(landCover) || (canopyPct != null && canopyPct >= 30);
+              const nearWater = NLCD_WATER_CLASSES.has(landCover);
+              if (wantWater && !nearWater) return null;
+              if (wantWooded && !wooded) return null;
+              return { ...c, wooded, nearWater };
+            }));
+            nlcdSurvivors.push(...results.filter(Boolean));
+          }
+        }
+
+        const scored = nlcdSurvivors.map((c) => ({ ...c, score: c.openness - c.roughness * 15 }));
         scored.sort((a, b) => b.score - a.score);
 
         // Greedy top-N with minimum spacing so results aren't all the
@@ -973,7 +1015,13 @@
             'text-halo-width': 1.4,
           },
         });
+        for (const id of ['camp-spot-dot', 'camp-spot-label']) {
+          map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+        }
       }
+
+      let lastScanResults = new Map(); // scanId -> result, for the click-to-open card
 
       scanBtn.onclick = async () => {
         if (!terrainOn) {
@@ -988,27 +1036,37 @@
         }
         const token = ++scanRequestToken;
         scanBtn.classList.add('active');
-        say('Scanning this view for camp-worthy ground — a thorough pass, can take a few seconds…');
+        const activePrefs = [...spotFilterState.view, ...spotFilterState.camp];
+        say(activePrefs.length
+          ? `Scanning for a spot matching your Spot Insights filters (${activePrefs.length}) — can take a few seconds…`
+          : 'Scanning this view for camp-worthy ground — a thorough pass, can take a few seconds…');
         try {
           const results = await scanForCampSpots();
           if (token !== scanRequestToken) return; // user moved on before this finished
 
+          lastScanResults.clear();
           ensureCampSpotLayers();
           map.getSource('camp-spots').setData({
             type: 'FeatureCollection',
-            features: results.map((c, idx) => ({
-              type: 'Feature',
-              properties: {
-                label: `#${idx + 1} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${elevationUnit === 'imperial' ? Math.round(c.openness * 3.28084).toLocaleString() + ' ft' : Math.round(c.openness).toLocaleString() + ' m'}`,
-              },
-              geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
-            })),
+            features: results.map((c, idx) => {
+              const scanId = `scan-${c.lng.toFixed(5)}-${c.lat.toFixed(5)}`;
+              lastScanResults.set(scanId, c);
+              const tags = [c.wooded ? 'wooded' : null, c.nearWater ? 'near water' : null].filter(Boolean).join(' · ');
+              return {
+                type: 'Feature',
+                properties: {
+                  scanId,
+                  label: `#${idx + 1} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${elevationUnit === 'imperial' ? Math.round(c.openness * 3.28084).toLocaleString() + ' ft' : Math.round(c.openness).toLocaleString() + ' m'}${tags ? `\n${tags}` : ''}`,
+                },
+                geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
+              };
+            }),
           });
           setCampSpotsVisible(true);
           scanResultsShown = true;
           say(results.length
-            ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping`
-            : 'No candidates in this view — try panning over USFS/BLM land near a dispersed-camping route');
+            ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping. Tap a pin for details.`
+            : 'No candidates matched in this view — try loosening your Spot Insights filters, or pan over USFS/BLM land near a dispersed-camping route');
         } catch (err) {
           console.error('Camp spot scan failed', err);
           say('Spot scan failed — try again', 'error');
@@ -1174,6 +1232,296 @@
         map.setFilter('spots', clauses.length ? ['all', ...clauses] : null);
       }
 
+      // Personal, on-device saved spots. There's no live backend here to
+      // publish into the shared 82-site verified dataset — that lives in
+      // a pipeline outside this repo — so "save" means this browser's
+      // localStorage, not a submission anyone else sees. Kept as a
+      // visually distinct layer/color everywhere so it never reads as
+      // part of the verified data.
+      const SAVED_SPOTS_KEY = 'backcountry-saved-spots-v1';
+      function loadSavedSpots() {
+        try {
+          return JSON.parse(localStorage.getItem(SAVED_SPOTS_KEY) || '[]');
+        } catch (err) {
+          console.warn('Failed to read saved spots', err);
+          return [];
+        }
+      }
+      function writeSavedSpots() {
+        try {
+          localStorage.setItem(SAVED_SPOTS_KEY, JSON.stringify(savedSpots));
+        } catch (err) {
+          console.warn('Failed to persist saved spots', err);
+        }
+      }
+      let savedSpots = loadSavedSpots();
+
+      function ensureSavedSpotLayers() {
+        if (map.getSource('saved-spots')) return;
+        map.addSource('saved-spots', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'saved-spot-dot',
+          type: 'circle',
+          source: 'saved-spots',
+          paint: {
+            'circle-radius': 6,
+            'circle-color': '#e05fa0',
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#7a1f4d',
+            'circle-pitch-alignment': 'viewport',
+          },
+        });
+        map.addLayer({
+          id: 'saved-spot-label',
+          type: 'symbol',
+          source: 'saved-spots',
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-font': ['Open Sans Regular'],
+            'text-size': 12,
+            'text-offset': [0, -1.2],
+            'text-anchor': 'bottom',
+            'text-pitch-alignment': 'viewport',
+            'text-rotation-alignment': 'viewport',
+            'text-allow-overlap': false,
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': 'rgba(20,22,18,0.9)',
+            'text-halo-width': 1.4,
+          },
+        });
+        for (const id of ['saved-spot-dot', 'saved-spot-label']) {
+          map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+        }
+      }
+      function refreshSavedSpotsLayer() {
+        ensureSavedSpotLayers();
+        map.getSource('saved-spots').setData({
+          type: 'FeatureCollection',
+          features: savedSpots.map((s) => ({
+            type: 'Feature',
+            properties: { id: s.id, label: `★ ${s.label}` },
+            geometry: { type: 'Point', coordinates: s.coordinates },
+          })),
+        });
+      }
+      function isSpotSaved(id) {
+        return savedSpots.some((s) => s.id === id);
+      }
+      function saveSpot(entry) {
+        if (isSpotSaved(entry.id)) return false;
+        savedSpots.push({ ...entry, savedAt: new Date().toISOString() });
+        writeSavedSpots();
+        refreshSavedSpotsLayer();
+        return true;
+      }
+      function unsaveSpot(id) {
+        savedSpots = savedSpots.filter((s) => s.id !== id);
+        writeSavedSpots();
+        refreshSavedSpotsLayer();
+      }
+
+      // Shared save/unsave controls for info cards — "save" always means
+      // this browser's localStorage, never a submission to the shared
+      // verified dataset (no backend exists for that here), so the label
+      // says so every time rather than implying otherwise.
+      function appendSaveButton(body, entry) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'panel-btn';
+        const saved = isSpotSaved(entry.id);
+        btn.textContent = saved ? 'Saved to this device ✓' : 'Save to this device';
+        btn.disabled = saved;
+        btn.onclick = () => {
+          saveSpot(entry);
+          btn.textContent = 'Saved to this device ✓';
+          btn.disabled = true;
+        };
+        body.append(btn);
+        body.append(paragraph('Saved on this device only — there\'s no backend here to publish or share it.', 'info-desc'));
+      }
+      function appendUnsaveButton(body, id) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'panel-btn';
+        btn.textContent = 'Remove from saved';
+        btn.onclick = () => { unsaveSpot(id); closeSheets(); };
+        body.append(btn);
+      }
+
+      function showSpotCard(feature) {
+        const props = feature.properties;
+        setInfoIcon(SPOT_STYLE);
+        openInfoCard('Camp Spot', props.unit_name || 'Dispersed Camp Spot', (body) => {
+          const badges = document.createElement('div');
+          badges.className = 'info-badges';
+          badges.append(badge(`Score ${(props.score * 100).toFixed(0)}`));
+          if (props.slope_degrees != null) badges.append(badge(`${props.slope_degrees.toFixed(1)}° slope`));
+          if (props.flat_area_m2) badges.append(badge(`${Math.round(props.flat_area_m2).toLocaleString()} m² pad`));
+          body.append(badges);
+
+          const enrichment = spotEnrichment.get(props.id);
+          if (enrichment) {
+            if (enrichment.needsReview) {
+              body.append(paragraph('⚠ This app\'s own rough terrain check disagrees with this spot\'s recorded slope — worth a second look, not necessarily wrong.', 'info-desc'));
+            }
+            const tagBadges = document.createElement('div');
+            tagBadges.className = 'info-badges';
+            for (const tag of enrichment.viewTags) tagBadges.append(badge(VIEW_TAG_LABELS[tag] || tag));
+            for (const tag of enrichment.campTags) tagBadges.append(badge(tag === 'tent' ? 'Tent OK' : tag === 'hammock' ? 'Hammock OK' : 'Trailer OK', 'status-open'));
+            body.append(tagBadges);
+          } else {
+            body.append(paragraph('Run "Analyze spots in view" (Map Layers → Spot Insights) for view-type and camp-type tags.', 'info-desc'));
+          }
+
+          const facts = document.createElement('div');
+          facts.className = 'info-facts';
+          [
+            factRow('Stay limit', props.stay_limit_days ? `${props.stay_limit_days} days` : null),
+            factRow('Access road', props.source_route),
+            factRow('Pad notes', props.pad_reason),
+          ].forEach((row) => row && facts.append(row));
+          if (facts.children.length) body.append(facts);
+
+          if (props.legal_reason) {
+            body.append(sectionTitle('Legal basis'));
+            body.append(paragraph(props.legal_reason));
+          }
+          const link = externalLink(props.legal_source, 'Source regulation ↗');
+          if (link) body.append(link);
+
+          appendSaveButton(body, {
+            id: `official-${props.id}`,
+            label: props.unit_name || 'Dispersed Camp Spot',
+            coordinates: feature.geometry.coordinates,
+            source: 'official',
+          });
+        }, feature.geometry.coordinates);
+      }
+
+      function showScanResultCard(feature) {
+        const props = feature.properties;
+        const result = lastScanResults.get(props.scanId);
+        setInfoIcon(SPOT_STYLE);
+        openInfoCard('Scanned Candidate', 'Camp Spot Candidate', (body) => {
+          body.append(paragraph('Computed from terrain shape and land-status data — not verified or permitted. Check current local rules before camping here.', 'info-desc'));
+          const badges = document.createElement('div');
+          badges.className = 'info-badges';
+          if (result) {
+            badges.append(badge(formatElevation(absoluteElevation([result.lng, result.lat]))));
+            badges.append(badge(`Open view ~${elevationUnit === 'imperial' ? Math.round(result.openness * 3.28084).toLocaleString() + ' ft' : Math.round(result.openness).toLocaleString() + ' m'}`));
+            if (result.wooded) badges.append(badge('Wooded'));
+            if (result.nearWater) badges.append(badge('Near water'));
+          }
+          body.append(badges);
+
+          appendSaveButton(body, {
+            id: props.scanId,
+            label: 'Scanned Camp Spot',
+            coordinates: feature.geometry.coordinates,
+            source: 'scanned',
+          });
+        }, feature.geometry.coordinates);
+      }
+
+      function showSavedSpotCard(feature) {
+        const props = feature.properties;
+        setInfoIcon(SPOT_STYLE);
+        openInfoCard('Saved Spot', props.label || 'Saved Camp Spot', (body) => {
+          body.append(paragraph('Saved on this device only — not part of the verified dataset, not shared with anyone else.', 'info-desc'));
+          appendUnsaveButton(body, props.id);
+        }, feature.geometry.coordinates);
+      }
+
+      // Separate from setupInfoClicks (which only knows about static
+      // style.json layers): 'spots' plus the dynamically-added
+      // camp-spot-*/saved-spot-* layers, checked fresh on every click
+      // since the latter two don't exist until a scan has run or
+      // something's been saved.
+      function setupSpotClicks() {
+        map.on('mouseenter', 'spots', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'spots', () => { map.getCanvas().style.cursor = ''; });
+
+        map.on('click', (e) => {
+          const hitBox = [[e.point.x - 16, e.point.y - 16], [e.point.x + 16, e.point.y + 16]];
+          const scanLayers = ['camp-spot-dot', 'camp-spot-label'].filter((id) => map.getLayer(id));
+          const savedLayers = ['saved-spot-dot', 'saved-spot-label'].filter((id) => map.getLayer(id));
+          if (scanLayers.length) {
+            const [scanned] = map.queryRenderedFeatures(hitBox, { layers: scanLayers });
+            if (scanned) return showScanResultCard(scanned);
+          }
+          if (savedLayers.length) {
+            const [saved] = map.queryRenderedFeatures(hitBox, { layers: savedLayers });
+            if (saved) return showSavedSpotCard(saved);
+          }
+          const [spot] = map.queryRenderedFeatures(hitBox, { layers: ['spots'] });
+          if (spot) return showSpotCard(spot);
+        });
+      }
+
+      function buildSpotInsightsPanel() {
+        if (!document.querySelector('#layers-body')) return;
+        const body = document.getElementById('layers-body');
+        const wrap = document.createElement('div');
+        wrap.className = 'group';
+
+        const heading = document.createElement('h2');
+        heading.textContent = 'Spot Insights';
+        wrap.append(heading);
+
+        const note = document.createElement('p');
+        note.className = 'group-note';
+        note.textContent = "Adds a view-type and camp-type tag to each indexed camp spot, from real terrain shape plus government tree-canopy/water data — alongside that dataset's own verified slope and legal info, not instead of it. These same checkboxes also steer the star-button scanner (find spots matching what you check here) and \"Save to this device\" on any spot's card keeps a personal copy — on this device only, not published anywhere. Needs 3D terrain on, and spots loaded in view (pan over the pilot area first).";
+        wrap.append(note);
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'analyze-spots-btn';
+        btn.className = 'panel-btn';
+        btn.textContent = 'Analyze spots in view';
+        btn.onclick = analyzeSpots;
+        wrap.append(btn);
+
+        const filterDefs = [
+          { group: 'view', key: 'openValley', label: 'Open valley view' },
+          { group: 'view', key: 'panoramic', label: 'Panoramic (360°)' },
+          { group: 'view', key: 'waterView', label: 'Near water' },
+          { group: 'view', key: 'wooded', label: 'Wooded / shaded' },
+          { group: 'camp', key: 'tentOk', label: 'Tent-friendly' },
+          { group: 'camp', key: 'hammockOk', label: 'Hammock-friendly (has trees)' },
+          { group: 'camp', key: 'trailerOk', label: 'Trailer / RV-friendly (large pad)' },
+        ];
+        for (const groupName of ['view', 'camp']) {
+          const sub = document.createElement('p');
+          sub.className = 'group-note';
+          sub.style.marginTop = groupName === 'camp' ? '10px' : '6px';
+          sub.textContent = groupName === 'view' ? 'Filter by view type (run analysis first)' : 'Filter by camp type (run analysis first)';
+          wrap.append(sub);
+          for (const def of filterDefs.filter((d) => d.group === groupName)) {
+            const row = document.createElement('label');
+            row.className = 'row';
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.className = 'spot-filter-checkbox';
+            box.disabled = true; // no feature-state exists until analysis runs — checking one now would just hide everything
+            box.onchange = () => {
+              const set = spotFilterState[def.group];
+              if (box.checked) set.add(def.key); else set.delete(def.key);
+              applySpotFilters();
+            };
+            const label = document.createElement('span');
+            label.className = 'label';
+            label.textContent = def.label;
+            row.append(box, label);
+            wrap.append(row);
+          }
+        }
+
+        body.append(wrap);
+      }
+
       map.on('error', (event) => {
         say(`Map error: ${event.error?.message ?? 'unknown'}`, 'error');
         console.error(event.error);
@@ -1201,6 +1549,8 @@
         buildLayerPanel(map, style, manifest);
         buildSpotInsightsPanel();
         setupInfoClicks(map, style);
+        setupSpotClicks();
+        if (savedSpots.length) refreshSavedSpotsLayer();
 
         const regions = await loadAvailableRegions(manifest);
         addRegionCoverage(map, regions);
@@ -1514,48 +1864,11 @@
     const SPOT_STYLE = { color: '#1e7a4a', icon: ICON_SVG.tent };
     const VIEW_TAG_LABELS = { 'open-valley': 'Open valley view', panoramic: 'Panoramic view', water: 'Near water', wooded: 'Wooded / shaded', sheltered: 'Sheltered' };
 
-    function showSpotCard(feature) {
-      const props = feature.properties;
-      setInfoIcon(SPOT_STYLE);
-      openInfoCard('Camp Spot', props.unit_name || 'Dispersed Camp Spot', (body) => {
-        const badges = document.createElement('div');
-        badges.className = 'info-badges';
-        badges.append(badge(`Score ${(props.score * 100).toFixed(0)}`));
-        if (props.slope_degrees != null) badges.append(badge(`${props.slope_degrees.toFixed(1)}° slope`));
-        if (props.flat_area_m2) badges.append(badge(`${Math.round(props.flat_area_m2).toLocaleString()} m² pad`));
-        body.append(badges);
-
-        const enrichment = spotEnrichment.get(props.id);
-        if (enrichment) {
-          if (enrichment.needsReview) {
-            body.append(paragraph('⚠ This app\'s own rough terrain check disagrees with this spot\'s recorded slope — worth a second look, not necessarily wrong.', 'info-desc'));
-          }
-          const tagBadges = document.createElement('div');
-          tagBadges.className = 'info-badges';
-          for (const tag of enrichment.viewTags) tagBadges.append(badge(VIEW_TAG_LABELS[tag] || tag));
-          for (const tag of enrichment.campTags) tagBadges.append(badge(tag === 'tent' ? 'Tent OK' : tag === 'hammock' ? 'Hammock OK' : 'Trailer OK', 'status-open'));
-          body.append(tagBadges);
-        } else {
-          body.append(paragraph('Run "Analyze spots in view" (Map Layers → Spot Insights) for view-type and camp-type tags.', 'info-desc'));
-        }
-
-        const facts = document.createElement('div');
-        facts.className = 'info-facts';
-        [
-          factRow('Stay limit', props.stay_limit_days ? `${props.stay_limit_days} days` : null),
-          factRow('Access road', props.source_route),
-          factRow('Pad notes', props.pad_reason),
-        ].forEach((row) => row && facts.append(row));
-        if (facts.children.length) body.append(facts);
-
-        if (props.legal_reason) {
-          body.append(sectionTitle('Legal basis'));
-          body.append(paragraph(props.legal_reason));
-        }
-        const link = externalLink(props.legal_source, 'Source regulation ↗');
-        if (link) body.append(link);
-      }, feature.geometry.coordinates);
-    }
+    // showSpotCard / showScanResultCard / showSavedSpotCard live inside
+    // start() now, not here — they read spotEnrichment, lastScanResults,
+    // and the save/unsave functions, all of which are local to that
+    // map instance's setup rather than reusable top-level state like
+    // showRecSiteCard/showTrailCard's helpers are.
 
     function setupInfoClicks(map, style) {
       const styleIds = new Set(style.layers.map((l) => l.id));
@@ -1564,10 +1877,9 @@
       // to the same rec site as a tap on the tiny circle itself.
       const recLayers = ['developed-rec', 'developed-rec-label'].filter((id) => styleIds.has(id));
       const trailLayers = ['trails'].filter((id) => styleIds.has(id));
-      const spotLayers = ['spots'].filter((id) => styleIds.has(id));
-      if (!recLayers.length && !trailLayers.length && !spotLayers.length) return;
+      if (!recLayers.length && !trailLayers.length) return;
 
-      for (const id of [...recLayers, ...trailLayers, ...spotLayers]) {
+      for (const id of [...recLayers, ...trailLayers]) {
         map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -1580,10 +1892,6 @@
           [e.point.x - 16, e.point.y - 16],
           [e.point.x + 16, e.point.y + 16],
         ];
-        if (spotLayers.length) {
-          const [spot] = map.queryRenderedFeatures(hitBox, { layers: spotLayers });
-          if (spot) return showSpotCard(spot);
-        }
         if (recLayers.length) {
           const [rec] = map.queryRenderedFeatures(hitBox, { layers: recLayers });
           if (rec) return showRecSiteCard(rec);
@@ -1794,67 +2102,6 @@
       note.className = 'note';
       note.textContent = 'Colors above match the map — this is also your legend.';
       body.prepend(note);
-    }
-
-    function buildSpotInsightsPanel() {
-      if (!document.querySelector('#layers-body')) return;
-      const body = document.getElementById('layers-body');
-      const wrap = document.createElement('div');
-      wrap.className = 'group';
-
-      const heading = document.createElement('h2');
-      heading.textContent = 'Spot Insights';
-      wrap.append(heading);
-
-      const note = document.createElement('p');
-      note.className = 'group-note';
-      note.textContent = "Adds a view-type and camp-type tag to each indexed camp spot, from real terrain shape plus government tree-canopy/water data — alongside that dataset's own verified slope and legal info, not instead of it. Needs 3D terrain on, and spots loaded in view (pan over the pilot area first).";
-      wrap.append(note);
-
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.id = 'analyze-spots-btn';
-      btn.className = 'panel-btn';
-      btn.textContent = 'Analyze spots in view';
-      btn.onclick = analyzeSpots;
-      wrap.append(btn);
-
-      const filterDefs = [
-        { group: 'view', key: 'openValley', label: 'Open valley view' },
-        { group: 'view', key: 'panoramic', label: 'Panoramic (360°)' },
-        { group: 'view', key: 'waterView', label: 'Near water' },
-        { group: 'view', key: 'wooded', label: 'Wooded / shaded' },
-        { group: 'camp', key: 'tentOk', label: 'Tent-friendly' },
-        { group: 'camp', key: 'hammockOk', label: 'Hammock-friendly (has trees)' },
-        { group: 'camp', key: 'trailerOk', label: 'Trailer / RV-friendly (large pad)' },
-      ];
-      for (const groupName of ['view', 'camp']) {
-        const sub = document.createElement('p');
-        sub.className = 'group-note';
-        sub.style.marginTop = groupName === 'camp' ? '10px' : '6px';
-        sub.textContent = groupName === 'view' ? 'Filter by view type (run analysis first)' : 'Filter by camp type (run analysis first)';
-        wrap.append(sub);
-        for (const def of filterDefs.filter((d) => d.group === groupName)) {
-          const row = document.createElement('label');
-          row.className = 'row';
-          const box = document.createElement('input');
-          box.type = 'checkbox';
-          box.className = 'spot-filter-checkbox';
-          box.disabled = true; // no feature-state exists until analysis runs — checking one now would just hide everything
-          box.onchange = () => {
-            const set = spotFilterState[def.group];
-            if (box.checked) set.add(def.key); else set.delete(def.key);
-            applySpotFilters();
-          };
-          const label = document.createElement('span');
-          label.className = 'label';
-          label.textContent = def.label;
-          row.append(box, label);
-          wrap.append(row);
-        }
-      }
-
-      body.append(wrap);
     }
 
     start().catch((error) => say(`Failed to load: ${error.message}`, 'error'));
