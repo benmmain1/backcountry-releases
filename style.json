@@ -851,7 +851,9 @@
         "text-field": ["concat", ["round", ["*", ["get", "elevation"], 3.28084]], " ft"],
         "text-font": ["Open Sans Regular"],
         "text-size": 10,
-        "text-letter-spacing": 0.02
+        "text-letter-spacing": 0.02,
+        "text-pitch-alignment": "viewport",
+        "text-rotation-alignment": "viewport"
       },
       "paint": {
         "text-color": "#f2e9d8",

@@ -463,7 +463,7 @@
         center: centre,
         zoom: 7.4,
         pitch: 0,
-        maxPitch: 85,
+        maxPitch: 65,
         hash: true,
         attributionControl: { compact: true },
       });
@@ -487,16 +487,16 @@
       // than always-on so panning/tapping targets stay accurate (hit
       // testing and fitBounds both assume a flat plane).
       //
-      // Tilting hard while zoomed far out (e.g. the statewide opening
-      // view) balloons the ground area visible toward the horizon —
-      // dramatically more terrain + imagery tiles in view at once than a
-      // phone can hold, which is what crashed the tab the first time this
-      // shipped. Scaling the pitch ceiling with zoom means a full
-      // near-horizon tilt is only reachable once you're zoomed in enough
-      // that the horizon isn't also the next state over.
+      // A near-horizon pitch shows ground for miles in every direction
+      // regardless of zoom — over rugged canyon country that's a lot of
+      // terrain/imagery tiles in view at once, which is what crashed the
+      // tab. So both levers stay conservative: the pitch ceiling scales
+      // with zoom (a full tilt is only reachable once zoomed in enough
+      // that the horizon isn't also the next county over) *and* the
+      // ceiling itself tops out well short of true horizon-grazing.
       function pitchCeilingForZoom() {
         const z = map.getZoom();
-        return Math.round(Math.min(80, Math.max(45, (z - 6) * 8 + 40)));
+        return Math.round(Math.min(65, Math.max(35, (z - 6) * 6 + 30)));
       }
       map.on('zoom', () => map.setMaxPitch(pitchCeilingForZoom()));
       map.setMaxPitch(pitchCeilingForZoom());
@@ -505,21 +505,25 @@
       function setTerrainMode(on) {
         terrainOn = on;
         terrainBtn.classList.toggle('active', on);
-        map.setTerrain(on ? { source: 'terrain', exaggeration: 1.5 } : null);
+        map.setTerrain(on ? { source: 'terrain', exaggeration: 1.2 } : null);
         if (on) {
-          map.easeTo({ pitch: Math.min(60, pitchCeilingForZoom()), bearing: -20, duration: 900 });
+          map.easeTo({ pitch: Math.min(55, pitchCeilingForZoom()), bearing: -20, duration: 900 });
           elevationHud.classList.add('visible');
           updateElevationReadout();
+          updateHighPoints();
         } else {
           map.easeTo({ pitch: 0, bearing: 0, duration: 700 });
           elevationHud.classList.remove('visible');
+          setHighPointsVisible(false);
         }
       }
       terrainBtn.onclick = () => setTerrainMode(!terrainOn);
 
       // Live elevation under the map center, onX-style — only meaningful
       // once setTerrain() is active (queryTerrainElevation reads the
-      // displaced mesh, not the flat 2D plane).
+      // displaced mesh, not the flat 2D plane). Updated on 'moveend'
+      // rather than every 'move' frame so it doesn't add per-frame work
+      // while the camera is already busy animating/rendering terrain.
       const elevationHud = document.getElementById('elevation-hud');
       const elevationReadout = document.getElementById('elevation-readout');
       let elevationUnit = 'imperial';
@@ -534,7 +538,100 @@
         if (!terrainOn) return;
         elevationReadout.textContent = formatElevation(map.queryTerrainElevation(map.getCenter()));
       }
-      map.on('move', updateElevationReadout);
+      map.on('moveend', updateElevationReadout);
+
+      // Peak-height labels, placed ON the terrain instead of tucked in a
+      // corner HUD. There's no named-summit dataset in this tileset (only
+      // contour lines carry elevation — checked directly against the live
+      // archive), so rather than invent place names this samples the real
+      // terrain mesh across the current view for local high points and
+      // labels each with its actual queried elevation. Honest numbers,
+      // not fabricated summit names.
+      const HIGH_POINT_GRID = 6;
+      const MAX_HIGH_POINTS = 4;
+      function computeHighPoints() {
+        const bounds = map.getBounds();
+        const w = bounds.getWest(), e = bounds.getEast(), s = bounds.getSouth(), n = bounds.getNorth();
+        const samples = new Map();
+        for (let i = 0; i <= HIGH_POINT_GRID; i++) {
+          for (let j = 0; j <= HIGH_POINT_GRID; j++) {
+            const lng = w + (e - w) * (i / HIGH_POINT_GRID);
+            const lat = s + (n - s) * (j / HIGH_POINT_GRID);
+            const elevation = map.queryTerrainElevation([lng, lat]);
+            if (elevation != null) samples.set(`${i},${j}`, { i, j, lng, lat, elevation });
+          }
+        }
+        // Local maxima: strictly higher than every direct grid neighbor
+        // that exists, so flat/edge cells never falsely qualify.
+        const maxima = [...samples.values()].filter((p) => {
+          return [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([di, dj]) => {
+            const neighbor = samples.get(`${p.i + di},${p.j + dj}`);
+            return !neighbor || neighbor.elevation <= p.elevation;
+          });
+        });
+        maxima.sort((a, b) => b.elevation - a.elevation);
+        return maxima.slice(0, MAX_HIGH_POINTS);
+      }
+      function setHighPointsVisible(visible) {
+        for (const id of ['high-points-dot', 'high-points-label']) {
+          if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+        }
+      }
+      function updateHighPoints() {
+        if (!terrainOn) return;
+        const geojson = {
+          type: 'FeatureCollection',
+          features: computeHighPoints().map((p) => ({
+            type: 'Feature',
+            properties: { elevationLabel: formatElevation(p.elevation) },
+            geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+          })),
+        };
+        const source = map.getSource('high-points');
+        if (source) {
+          source.setData(geojson);
+        } else {
+          map.addSource('high-points', { type: 'geojson', data: geojson });
+          // pitch/rotation-alignment "viewport" keeps these facing the
+          // camera and upright regardless of tilt/bearing — without it,
+          // labels lie flat on the tilted ground and become unreadable,
+          // which was the original complaint.
+          map.addLayer({
+            id: 'high-points-dot',
+            type: 'circle',
+            source: 'high-points',
+            paint: {
+              'circle-radius': 4,
+              'circle-color': '#ffffff',
+              'circle-stroke-width': 1.5,
+              'circle-stroke-color': '#1e7a4a',
+              'circle-pitch-alignment': 'viewport',
+            },
+          });
+          map.addLayer({
+            id: 'high-points-label',
+            type: 'symbol',
+            source: 'high-points',
+            layout: {
+              'text-field': ['get', 'elevationLabel'],
+              'text-font': ['Open Sans Regular'],
+              'text-size': 13,
+              'text-offset': [0, -1.1],
+              'text-anchor': 'bottom',
+              'text-pitch-alignment': 'viewport',
+              'text-rotation-alignment': 'viewport',
+              'text-allow-overlap': false,
+            },
+            paint: {
+              'text-color': '#ffffff',
+              'text-halo-color': 'rgba(20,22,18,0.9)',
+              'text-halo-width': 1.4,
+            },
+          });
+        }
+        setHighPointsVisible(true);
+      }
+      map.on('moveend', updateHighPoints);
 
       function setElevationUnit(unit) {
         elevationUnit = unit;
@@ -542,6 +639,7 @@
           btn.classList.toggle('active', btn.dataset.unit === unit);
         }
         updateElevationReadout();
+        updateHighPoints();
         scaleControl.setUnit(unit);
         if (style.layers.some((l) => l.id === 'contours-label')) {
           map.setLayoutProperty('contours-label', 'text-field', unit === 'imperial'
