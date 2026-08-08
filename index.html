@@ -528,11 +528,11 @@
           map.easeTo({ pitch: Math.min(55, pitchCeilingForZoom()), bearing: -20, duration: 900 });
           elevationHud.classList.add('visible');
           updateElevationReadout();
-          updateHighPoints();
+          updateLandmarks();
         } else {
           map.easeTo({ pitch: 0, bearing: 0, duration: 700 });
           elevationHud.classList.remove('visible');
-          setHighPointsVisible(false);
+          setLandmarksVisible(false);
         }
       }
       terrainBtn.onclick = () => setTerrainMode(!terrainOn);
@@ -558,98 +558,191 @@
       }
       map.on('moveend', updateElevationReadout);
 
-      // Peak-height labels, placed ON the terrain instead of tucked in a
-      // corner HUD. There's no named-summit dataset in this tileset (only
-      // contour lines carry elevation — checked directly against the live
-      // archive), so rather than invent place names this samples the real
-      // terrain mesh across the current view for local high points and
-      // labels each with its actual queried elevation. Honest numbers,
-      // not fabricated summit names.
-      const HIGH_POINT_GRID = 6;
-      const MAX_HIGH_POINTS = 4;
-      function computeHighPoints() {
-        const bounds = map.getBounds();
-        const w = bounds.getWest(), e = bounds.getEast(), s = bounds.getSouth(), n = bounds.getNorth();
-        const samples = new Map();
-        for (let i = 0; i <= HIGH_POINT_GRID; i++) {
-          for (let j = 0; j <= HIGH_POINT_GRID; j++) {
-            const lng = w + (e - w) * (i / HIGH_POINT_GRID);
-            const lat = s + (n - s) * (j / HIGH_POINT_GRID);
-            const elevation = absoluteElevation([lng, lat]);
-            if (elevation != null) samples.set(`${i},${j}`, { i, j, lng, lat, elevation });
+      // Peak and place-name labels, placed directly on the terrain
+      // instead of a plain elevation-only marker. This tileset has no
+      // named-summit dataset of its own (only contour lines carry
+      // elevation — checked directly against the live archive), so names
+      // come from Wikidata's public SPARQL endpoint: free, keyless, and
+      // actually CORS-enabled from a browser (checked — OpenStreetMap's
+      // Overpass API has the same data but sends no CORS headers at all,
+      // so it's unreachable from client-side code here). Wikidata's own
+      // elevation tagging turned out to be inconsistently unit-tagged
+      // across entries when checked (some peaks in meters, others in
+      // feet, no reliable way to tell which from the query alone), so
+      // only the name + coordinate come from Wikidata — elevation is
+      // computed from this app's own already-verified DEM instead, via
+      // absoluteElevation().
+      const WIKIDATA_ENDPOINT = 'https://query.wikidata.org/sparql';
+      const MAX_PEAKS_SHOWN = 6;
+      const MAX_PLACES_SHOWN = 6;
+      const landmarkCache = new Map();
+
+      function sparqlBoxQuery([w, s, e, n], typeClause) {
+        return `SELECT ?place ?placeLabel ?location WHERE {
+          SERVICE wikibase:box {
+            ?place wdt:P625 ?location .
+            bd:serviceParam wikibase:cornerWest "Point(${w} ${s})"^^geo:wktLiteral.
+            bd:serviceParam wikibase:cornerEast "Point(${e} ${n})"^^geo:wktLiteral.
           }
-        }
-        // Local maxima: strictly higher than every direct grid neighbor
-        // that exists, so flat/edge cells never falsely qualify.
-        const maxima = [...samples.values()].filter((p) => {
-          return [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([di, dj]) => {
-            const neighbor = samples.get(`${p.i + di},${p.j + dj}`);
-            return !neighbor || neighbor.elevation <= p.elevation;
-          });
-        });
-        maxima.sort((a, b) => b.elevation - a.elevation);
-        return maxima.slice(0, MAX_HIGH_POINTS);
+          ${typeClause}
+          SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+        } LIMIT 40`;
       }
-      function setHighPointsVisible(visible) {
-        for (const id of ['high-points-dot', 'high-points-label']) {
+      async function fetchWikidataPoints(bbox, typeClause, signal) {
+        const url = `${WIKIDATA_ENDPOINT}?query=${encodeURIComponent(sparqlBoxQuery(bbox, typeClause))}`;
+        const res = await fetch(url, { headers: { Accept: 'application/sparql-results+json' }, signal });
+        if (!res.ok) throw new Error(`Wikidata ${res.status}`);
+        const data = await res.json();
+        return data.results.bindings
+          .map((b) => {
+            const match = /Point\(([-\d.]+) ([-\d.]+)\)/.exec(b.location?.value || '');
+            if (!match || !b.placeLabel) return null;
+            return { name: b.placeLabel.value, lng: Number(match[1]), lat: Number(match[2]) };
+          })
+          .filter(Boolean);
+      }
+      // Cached per rounded bbox so re-panning across the same area (or
+      // just toggling the unit switch) doesn't refire the same query —
+      // this is a live third-party lookup, not free/instant like the
+      // local terrain data.
+      function fetchLandmarks(bbox) {
+        const key = bbox.map((n) => n.toFixed(2)).join(',');
+        if (landmarkCache.has(key)) return landmarkCache.get(key);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        const result = Promise.all([
+          fetchWikidataPoints(bbox, '?place wdt:P31 wd:Q8502.', controller.signal),
+          fetchWikidataPoints(bbox, '?place wdt:P31/wdt:P279* wd:Q486972.', controller.signal),
+        ])
+          .then(([peaks, places]) => ({ peaks, places }))
+          .catch((err) => {
+            console.warn('Wikidata landmark lookup failed', err);
+            return { peaks: [], places: [] };
+          })
+          .finally(() => clearTimeout(timeout));
+        landmarkCache.set(key, result);
+        return result;
+      }
+
+      function setLandmarksVisible(visible) {
+        for (const id of ['landmark-peak-dot', 'landmark-peak-label', 'landmark-place-label']) {
           if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
         }
       }
-      function updateHighPoints() {
-        if (!terrainOn) return;
-        const geojson = {
-          type: 'FeatureCollection',
-          features: computeHighPoints().map((p) => ({
-            type: 'Feature',
-            properties: { elevationLabel: formatElevation(p.elevation) },
-            geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-          })),
-        };
-        const source = map.getSource('high-points');
-        if (source) {
-          source.setData(geojson);
-        } else {
-          map.addSource('high-points', { type: 'geojson', data: geojson });
-          // pitch/rotation-alignment "viewport" keeps these facing the
-          // camera and upright regardless of tilt/bearing — without it,
-          // labels lie flat on the tilted ground and become unreadable,
-          // which was the original complaint.
-          map.addLayer({
-            id: 'high-points-dot',
-            type: 'circle',
-            source: 'high-points',
-            paint: {
-              'circle-radius': 4,
-              'circle-color': '#ffffff',
-              'circle-stroke-width': 1.5,
-              'circle-stroke-color': '#1e7a4a',
-              'circle-pitch-alignment': 'viewport',
-            },
-          });
-          map.addLayer({
-            id: 'high-points-label',
-            type: 'symbol',
-            source: 'high-points',
-            layout: {
-              'text-field': ['get', 'elevationLabel'],
-              'text-font': ['Open Sans Regular'],
-              'text-size': 13,
-              'text-offset': [0, -1.1],
-              'text-anchor': 'bottom',
-              'text-pitch-alignment': 'viewport',
-              'text-rotation-alignment': 'viewport',
-              'text-allow-overlap': false,
-            },
-            paint: {
-              'text-color': '#ffffff',
-              'text-halo-color': 'rgba(20,22,18,0.9)',
-              'text-halo-width': 1.4,
-            },
-          });
-        }
-        setHighPointsVisible(true);
+      function ensureLandmarkLayers() {
+        if (map.getSource('landmarks')) return;
+        map.addSource('landmarks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        // pitch/rotation-alignment "viewport" keeps these facing the
+        // camera and upright regardless of tilt/bearing — without it,
+        // labels lie flat on the tilted ground and become unreadable,
+        // which was the original complaint.
+        map.addLayer({
+          id: 'landmark-peak-dot',
+          type: 'circle',
+          source: 'landmarks',
+          filter: ['==', ['get', 'kind'], 'peak'],
+          paint: {
+            'circle-radius': 4,
+            'circle-color': '#ffffff',
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#1e7a4a',
+            'circle-pitch-alignment': 'viewport',
+          },
+        });
+        map.addLayer({
+          id: 'landmark-peak-label',
+          type: 'symbol',
+          source: 'landmarks',
+          filter: ['==', ['get', 'kind'], 'peak'],
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-font': ['Open Sans Regular'],
+            'text-size': 13,
+            'text-offset': [0, -1.1],
+            'text-anchor': 'bottom',
+            'text-pitch-alignment': 'viewport',
+            'text-rotation-alignment': 'viewport',
+            'text-allow-overlap': false,
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': 'rgba(20,22,18,0.9)',
+            'text-halo-width': 1.4,
+          },
+        });
+        map.addLayer({
+          id: 'landmark-place-label',
+          type: 'symbol',
+          source: 'landmarks',
+          filter: ['==', ['get', 'kind'], 'place'],
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-font': ['Open Sans Regular'],
+            'text-size': 11,
+            'text-anchor': 'center',
+            'text-pitch-alignment': 'viewport',
+            'text-rotation-alignment': 'viewport',
+            'text-allow-overlap': false,
+          },
+          paint: {
+            'text-color': '#d8dccf',
+            'text-halo-color': 'rgba(20,22,18,0.85)',
+            'text-halo-width': 1.2,
+          },
+        });
       }
-      map.on('moveend', updateHighPoints);
+
+      let landmarkRequestToken = 0;
+      let landmarkDebounce = null;
+      function updateLandmarks() {
+        if (!terrainOn) return;
+        clearTimeout(landmarkDebounce);
+        landmarkDebounce = setTimeout(async () => {
+          if (!terrainOn) return;
+          // A whole-region view makes for a slow, low-value query (way
+          // more candidates than fit on screen) — skip it until zoomed
+          // in enough that "nearby peaks and places" is a meaningful ask.
+          if (map.getZoom() < 9) {
+            if (map.getSource('landmarks')) map.getSource('landmarks').setData({ type: 'FeatureCollection', features: [] });
+            return;
+          }
+          const bounds = map.getBounds();
+          const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+          const token = ++landmarkRequestToken;
+          const { peaks, places } = await fetchLandmarks(bbox);
+          if (token !== landmarkRequestToken || !terrainOn) return; // view (or mode) moved on before this resolved
+
+          const center = map.getCenter();
+          const shownPeaks = peaks
+            .map((p) => ({ ...p, elevation: absoluteElevation([p.lng, p.lat]) }))
+            .filter((p) => p.elevation != null)
+            .sort((a, b) => b.elevation - a.elevation)
+            .slice(0, MAX_PEAKS_SHOWN);
+          const shownPlaces = places
+            .map((p) => ({ ...p, dist: Math.hypot(p.lng - center.lng, p.lat - center.lat) }))
+            .sort((a, b) => a.dist - b.dist)
+            .slice(0, MAX_PLACES_SHOWN);
+
+          ensureLandmarkLayers();
+          map.getSource('landmarks').setData({
+            type: 'FeatureCollection',
+            features: [
+              ...shownPeaks.map((p) => ({
+                type: 'Feature',
+                properties: { kind: 'peak', label: `${p.name}\n${formatElevation(p.elevation)}` },
+                geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+              })),
+              ...shownPlaces.map((p) => ({
+                type: 'Feature',
+                properties: { kind: 'place', label: p.name },
+                geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+              })),
+            ],
+          });
+          setLandmarksVisible(true);
+        }, 500);
+      }
+      map.on('moveend', updateLandmarks);
 
       function setElevationUnit(unit) {
         elevationUnit = unit;
@@ -657,7 +750,7 @@
           btn.classList.toggle('active', btn.dataset.unit === unit);
         }
         updateElevationReadout();
-        updateHighPoints();
+        updateLandmarks();
         scaleControl.setUnit(unit);
         if (style.layers.some((l) => l.id === 'contours-label')) {
           map.setLayoutProperty('contours-label', 'text-field', unit === 'imperial'
