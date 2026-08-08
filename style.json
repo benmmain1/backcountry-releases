@@ -839,6 +839,27 @@
       }
     },
     {
+      "id": "contours-label",
+      "type": "symbol",
+      "source": "backcountry",
+      "source-layer": "contours",
+      "filter": ["==", ["%", ["get", "elevation"], 200], 0],
+      "minzoom": 11,
+      "layout": {
+        "visibility": "none",
+        "symbol-placement": "line",
+        "text-field": ["concat", ["round", ["*", ["get", "elevation"], 3.28084]], " ft"],
+        "text-font": ["Open Sans Regular"],
+        "text-size": 10,
+        "text-letter-spacing": 0.02
+      },
+      "paint": {
+        "text-color": "#f2e9d8",
+        "text-halo-color": "rgba(20,22,18,0.85)",
+        "text-halo-width": 1.1
+      }
+    },
+    {
       "id": "cell-coverage",
       "type": "fill",
       "source": "backcountry",
