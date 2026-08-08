@@ -267,6 +267,9 @@
     <button id="recenter-btn" type="button" class="chrome-btn" title="Recenter">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round"/></svg>
     </button>
+    <button id="basemap-btn" type="button" class="chrome-btn" title="Switch to topo map">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>
+    </button>
     <button id="terrain-btn" type="button" class="chrome-btn" title="3D terrain">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 9 8l4 6.5 2-3L21 20H3Z"/></svg>
     </button>
@@ -345,6 +348,7 @@
     const layersBtn = document.getElementById('layers-btn');
     const regionsBtn = document.getElementById('regions-btn');
     const recenterBtn = document.getElementById('recenter-btn');
+    const basemapBtn = document.getElementById('basemap-btn');
     const terrainBtn = document.getElementById('terrain-btn');
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
@@ -479,6 +483,22 @@
           map.flyTo({ center: centre, zoom: 7.4 });
         }
       };
+
+      // Topo basemap: OpenTopoMap (OSM data + SRTM, free/keyless/CORS-
+      // enabled — checked directly) as an alternative to satellite
+      // imagery. Contour lines, shaded relief, and water bodies come
+      // pre-rendered into its tiles, which reads far less cluttered than
+      // raw satellite photography for spotting terrain shape and water
+      // sources at a glance.
+      let basemap = 'satellite';
+      function setBasemap(next) {
+        basemap = next;
+        basemapBtn.classList.toggle('active', basemap === 'topo');
+        basemapBtn.title = basemap === 'topo' ? 'Switch to satellite' : 'Switch to topo map';
+        map.setLayoutProperty('satellite', 'visibility', basemap === 'satellite' ? 'visible' : 'none');
+        map.setLayoutProperty('topo', 'visibility', basemap === 'topo' ? 'visible' : 'none');
+      }
+      basemapBtn.onclick = () => setBasemap(basemap === 'satellite' ? 'topo' : 'satellite');
 
       // 3D terrain: displaces the same raster-dem source already used for
       // flat hillshading into an actual mesh, then tilts the camera over

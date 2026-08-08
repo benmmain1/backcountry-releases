@@ -32,6 +32,17 @@
       "tileSize": 256,
       "maxzoom": 19,
       "attribution": "© Esri, Maxar, Earthstar Geographics"
+    },
+    "topo": {
+      "type": "raster",
+      "tiles": [
+        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://c.tile.opentopomap.org/{z}/{x}/{y}.png"
+      ],
+      "tileSize": 256,
+      "maxzoom": 17,
+      "attribution": "Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)"
     }
   },
   "layers": [
@@ -49,6 +60,14 @@
       "paint": {
         "raster-saturation": -0.15,
         "raster-brightness-max": 0.95
+      }
+    },
+    {
+      "id": "topo",
+      "type": "raster",
+      "source": "topo",
+      "layout": {
+        "visibility": "none"
       }
     },
     {
