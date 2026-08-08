@@ -417,7 +417,8 @@
         <option value="anthropic">Claude (Anthropic)</option>
         <option value="openai">ChatGPT (OpenAI)</option>
         <option value="google">Gemini (Google)</option>
-        <option value="custom">Other (Groq, Grok, etc.)</option>
+        <option value="groq">Groq</option>
+        <option value="custom">Other (Grok, Together, Ollama, etc.)</option>
       </select>
       <p class="hint"><a id="ai-key-link" href="#" target="_blank" rel="noopener noreferrer">Get a free key ↗</a></p>
     </div>
@@ -1540,7 +1541,8 @@
       anthropic: { label: 'Claude (Anthropic)', defaultModel: 'claude-sonnet-5', hint: 'e.g. claude-sonnet-5, claude-opus-5, claude-haiku-4-5-20251001', needsBaseUrl: false, keyUrl: 'https://console.anthropic.com/settings/keys' },
       openai: { label: 'ChatGPT (OpenAI)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false, keyUrl: 'https://platform.openai.com/api-keys' },
       google: { label: 'Gemini (Google)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
-      custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Groq, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
+      groq: { label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use llama-3.2-11b-vision-preview if you want image upload to work', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys' },
+      custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Grok, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
     };
     const AI_SETTINGS_KEY = 'bc_ai_settings';
     const AI_MAX_TOKENS = 1400;
@@ -1667,6 +1669,8 @@ ${spotsText}`;
           return callAnthropic(settings, system, internalMessages);
         case 'openai':
           return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.openai.com/v1/chat/completions');
+        case 'groq':
+          return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.groq.com/openai/v1/chat/completions');
         case 'custom':
           if (!settings.baseUrl) throw new Error('Base URL is required for a custom provider');
           return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), settings.baseUrl);
