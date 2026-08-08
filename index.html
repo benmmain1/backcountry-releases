@@ -273,6 +273,9 @@
     <button id="terrain-btn" type="button" class="chrome-btn" title="3D terrain">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 9 8l4 6.5 2-3L21 20H3Z"/></svg>
     </button>
+    <button id="scan-btn" type="button" class="chrome-btn" title="Find campsite spots (needs 3D on)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 2.9 6.3L21 9l-4.9 4.5L17.4 20 12 16.8 6.6 20l1.3-6.5L3 9l6.1-.7Z"/></svg>
+    </button>
   </div>
 
   <div id="elevation-hud">
@@ -350,6 +353,7 @@
     const recenterBtn = document.getElementById('recenter-btn');
     const basemapBtn = document.getElementById('basemap-btn');
     const terrainBtn = document.getElementById('terrain-btn');
+    const scanBtn = document.getElementById('scan-btn');
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
     const regionsSheet = document.getElementById('regions-sheet');
@@ -783,6 +787,222 @@
       for (const btn of document.querySelectorAll('.unit-btn')) {
         btn.onclick = () => setElevationUnit(btn.dataset.unit);
       }
+
+      // Campsite-spot scanner. This is what the 3D terrain data is
+      // actually *for*, beyond looking nice: search the current view for
+      // ground that's flat enough to pitch a tent on, has a genuinely
+      // open (unobstructed) view in some direction, and sits on land
+      // where dispersed camping is broadly allowed - USFS or BLM,
+      // excluding designated Wilderness and any active closure, near a
+      // route already tagged as a dispersed-camping road in the existing
+      // MVUM data.
+      //
+      // This is a heuristic search over real terrain + land-status data,
+      // not a verified or permitted campsite list - it's a starting
+      // point for scouting, not a substitute for checking current local
+      // regulations, road conditions, or seasonal restrictions before you
+      // go. Land-status lookups use queryRenderedFeatures, which only
+      // sees layers that are actually rendered, so "wilderness" (off by
+      // default) is temporarily forced visible for the scan and restored
+      // right after — the toggle is invisible to the user either way
+      // since no frame renders in between.
+      const CAMP_GRID = 9;
+      const MIN_SPACING_M = 150;
+      const RAY_COUNT = 8;
+      const RAY_MAX_M = 1200;
+      const RAY_STEP_M = 80;
+      const ROUGHNESS_SAMPLE_DEG = 0.00025;
+      let scanResultsShown = false;
+      let scanRequestToken = 0;
+
+      function metersToDegrees(lat) {
+        const perDegLat = 111320;
+        const perDegLng = perDegLat * Math.cos((lat * Math.PI) / 180);
+        return { perDegLat, perDegLng };
+      }
+
+      function isLegalCampLand(lngLat, px) {
+        const onUsfsOrBlm = map.queryRenderedFeatures(px, { layers: ['public-land-usfs', 'public-land-blm'] }).length > 0;
+        if (!onUsfsOrBlm) return false;
+        if (map.queryRenderedFeatures(px, { layers: ['wilderness'] }).length > 0) return false;
+        if (map.queryRenderedFeatures(px, { layers: ['closures'] }).length > 0) return false;
+        return true;
+      }
+      function nearDispersedRoute(px) {
+        const r = 45;
+        const box = [[px.x - r, px.y - r], [px.x + r, px.y + r]];
+        return map.queryRenderedFeatures(box, { layers: ['mvum-routes-dispersed'] }).length > 0;
+      }
+      // Lower is flatter — max elevation swing across a small ring of
+      // sample points around the candidate, a cheap proxy for how bumpy
+      // the ground is (real tent-pad quality, not just "not on a cliff").
+      function localRoughness([lng, lat]) {
+        const d = ROUGHNESS_SAMPLE_DEG;
+        const offsets = [[d, 0], [-d, 0], [0, d], [0, -d], [d, d], [-d, -d], [d, -d], [-d, d]];
+        const samples = [absoluteElevation([lng, lat]), ...offsets.map(([dx, dy]) => absoluteElevation([lng + dx, lat + dy]))]
+          .filter((e) => e != null);
+        return samples.length >= 6 ? Math.max(...samples) - Math.min(...samples) : null;
+      }
+      // How far you can see before the ground rises above eye level, in 8
+      // compass directions, averaged. A simplified single-observer
+      // horizon check (no real full-raster viewshed), but it correctly
+      // tells boxed-in terrain (walls close in every direction) apart
+      // from a rim or bench with a valley falling away in front of it.
+      function opennessMeters([lng, lat]) {
+        const origin = absoluteElevation([lng, lat]);
+        if (origin == null) return null;
+        const eyeLevel = origin + 1.7;
+        const { perDegLat, perDegLng } = metersToDegrees(lat);
+        let total = 0;
+        for (let r = 0; r < RAY_COUNT; r++) {
+          const angle = (r / RAY_COUNT) * Math.PI * 2;
+          const dLat = Math.cos(angle), dLng = Math.sin(angle);
+          let clear = 0;
+          for (let dist = RAY_STEP_M; dist <= RAY_MAX_M; dist += RAY_STEP_M) {
+            const sampleLat = lat + (dLat * dist) / perDegLat;
+            const sampleLng = lng + (dLng * dist) / perDegLng;
+            const elevation = absoluteElevation([sampleLng, sampleLat]);
+            if (elevation == null || elevation > eyeLevel) break;
+            clear = dist;
+          }
+          total += clear;
+        }
+        return total / RAY_COUNT;
+      }
+
+      async function scanForCampSpots() {
+        const bounds = map.getBounds();
+        const w = bounds.getWest(), e = bounds.getEast(), s = bounds.getSouth(), n = bounds.getNorth();
+
+        const wildernessWasHidden = map.getLayoutProperty('wilderness', 'visibility') !== 'visible';
+        if (wildernessWasHidden) map.setLayoutProperty('wilderness', 'visibility', 'visible');
+
+        const candidates = [];
+        for (let i = 0; i <= CAMP_GRID; i++) {
+          for (let j = 0; j <= CAMP_GRID; j++) {
+            const lng = w + (e - w) * (i / CAMP_GRID);
+            const lat = s + (n - s) * (j / CAMP_GRID);
+            const px = map.project([lng, lat]);
+            if (px.x < 0 || px.y < 0 || px.x > map.getContainer().clientWidth || px.y > map.getContainer().clientHeight) continue;
+            if (!isLegalCampLand([lng, lat], px)) continue;
+            if (!nearDispersedRoute(px)) continue;
+            candidates.push({ lng, lat });
+          }
+          if (i % 3 === 0) await new Promise((r) => setTimeout(r, 0)); // yield so the UI doesn't freeze
+        }
+
+        if (wildernessWasHidden) map.setLayoutProperty('wilderness', 'visibility', 'none');
+
+        const scored = [];
+        for (let idx = 0; idx < candidates.length; idx++) {
+          const c = candidates[idx];
+          const roughness = localRoughness([c.lng, c.lat]);
+          const openness = opennessMeters([c.lng, c.lat]);
+          if (roughness != null && openness != null && roughness <= 25) { // 25m+ swing is too uneven to pitch a tent
+            scored.push({ ...c, roughness, openness, score: openness - roughness * 15 });
+          }
+          if (idx % 5 === 0) await new Promise((r) => setTimeout(r, 0)); // ray-casting per candidate adds up — yield periodically
+        }
+        scored.sort((a, b) => b.score - a.score);
+
+        // Greedy top-N with minimum spacing so results aren't all the
+        // same small patch of ground.
+        const { perDegLat, perDegLng } = metersToDegrees((s + n) / 2);
+        const picked = [];
+        for (const c of scored) {
+          const tooClose = picked.some((p) => {
+            const dx = (c.lng - p.lng) * perDegLng, dy = (c.lat - p.lat) * perDegLat;
+            return Math.hypot(dx, dy) < MIN_SPACING_M;
+          });
+          if (!tooClose) picked.push(c);
+          if (picked.length >= 5) break;
+        }
+        return picked;
+      }
+
+      function setCampSpotsVisible(visible) {
+        for (const id of ['camp-spot-dot', 'camp-spot-label']) {
+          if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+        }
+      }
+      function ensureCampSpotLayers() {
+        if (map.getSource('camp-spots')) return;
+        map.addSource('camp-spots', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'camp-spot-dot',
+          type: 'circle',
+          source: 'camp-spots',
+          paint: {
+            'circle-radius': 6,
+            'circle-color': '#f5c542',
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#7a5b0a',
+            'circle-pitch-alignment': 'viewport',
+          },
+        });
+        map.addLayer({
+          id: 'camp-spot-label',
+          type: 'symbol',
+          source: 'camp-spots',
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-font': ['Open Sans Regular'],
+            'text-size': 12,
+            'text-offset': [0, -1.2],
+            'text-anchor': 'bottom',
+            'text-pitch-alignment': 'viewport',
+            'text-rotation-alignment': 'viewport',
+            'text-allow-overlap': false,
+            'text-justify': 'left',
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': 'rgba(20,22,18,0.9)',
+            'text-halo-width': 1.4,
+          },
+        });
+      }
+
+      scanBtn.onclick = async () => {
+        if (!terrainOn) {
+          say('Turn on 3D terrain first — spot-finding reads real elevation data off the terrain mesh', 'warn');
+          return;
+        }
+        if (scanResultsShown) {
+          setCampSpotsVisible(false);
+          scanResultsShown = false;
+          scanBtn.classList.remove('active');
+          return;
+        }
+        const token = ++scanRequestToken;
+        scanBtn.classList.add('active');
+        say('Scanning this view for camp-worthy ground…');
+        try {
+          const results = await scanForCampSpots();
+          if (token !== scanRequestToken) return; // user moved on before this finished
+
+          ensureCampSpotLayers();
+          map.getSource('camp-spots').setData({
+            type: 'FeatureCollection',
+            features: results.map((c, idx) => ({
+              type: 'Feature',
+              properties: {
+                label: `#${idx + 1} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${elevationUnit === 'imperial' ? Math.round(c.openness * 3.28084).toLocaleString() + ' ft' : Math.round(c.openness).toLocaleString() + ' m'}`,
+              },
+              geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
+            })),
+          });
+          setCampSpotsVisible(true);
+          scanResultsShown = true;
+          say(results.length
+            ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping`
+            : 'No candidates in this view — try panning over USFS/BLM land near a dispersed-camping route');
+        } catch (err) {
+          console.error('Camp spot scan failed', err);
+          say('Spot scan failed — try again', 'error');
+          scanBtn.classList.remove('active');
+        }
+      };
 
       map.on('error', (event) => {
         say(`Map error: ${event.error?.message ?? 'unknown'}`, 'error');
