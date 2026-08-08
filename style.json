@@ -1,6 +1,15 @@
 {
   "version": 8,
   "glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
+  "sky": {
+    "sky-color": "#5b8dd6",
+    "horizon-color": "#c8d8e8",
+    "fog-color": "#c8d8e8",
+    "sky-horizon-blend": 0.6,
+    "horizon-fog-blend": 0.6,
+    "fog-ground-blend": 0.6,
+    "atmosphere-blend": 0.8
+  },
   "sources": {
     "backcountry": {
       "type": "vector",
@@ -31,15 +40,6 @@
       "type": "background",
       "paint": {
         "background-color": "#2b2f26"
-      }
-    },
-    {
-      "id": "sky",
-      "type": "sky",
-      "paint": {
-        "sky-type": "atmosphere",
-        "sky-atmosphere-sun": [0.0, 90.0],
-        "sky-atmosphere-sun-intensity": 5
       }
     },
     {
