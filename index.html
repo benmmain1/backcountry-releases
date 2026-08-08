@@ -227,6 +227,11 @@
   .ai-msg.assistant { align-self: flex-start; background: var(--border); border-bottom-left-radius: 4px; }
   .ai-msg.error { align-self: stretch; background: rgba(200,40,30,.14); color: #c8281e; }
   .ai-msg img.ai-msg-image { display: block; width: 100%; max-width: 220px; border-radius: 10px; margin-bottom: 6px; }
+  .ai-msg .ai-spot-link {
+    display: inline; border: none; background: none; padding: 0; margin: 0;
+    color: var(--accent); font: inherit; font-weight: 700; text-decoration: underline;
+    text-underline-offset: 2px; cursor: pointer;
+  }
   .ai-msg .ai-unverified { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--muted); font-size: 12px; color: var(--muted); }
   .ai-suggestions { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
   .ai-suggestions button {
@@ -602,6 +607,7 @@
         hash: true,
         attributionControl: { compact: true },
       });
+      mapRef = map; // exposes the map instance to the AI guide, which is set up outside start()
 
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
       map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-right');
@@ -1018,6 +1024,10 @@
     }
 
     let infoCardToken = 0;
+    // Set once start() creates the map — the AI guide is wired up
+    // independently of map load (so its settings UI works immediately),
+    // but needs this to fly to and open a spot a reply links to.
+    let mapRef = null;
 
     function openInfoCard(kicker, title, buildBody, photoCoord, curatedPhoto) {
       const token = ++infoCardToken;
@@ -1872,11 +1882,62 @@ ${spotsText}`;
           el.append(img);
         }
         const textEl = document.createElement('span');
+        textEl.className = 'ai-msg-text';
         textEl.textContent = text;
         el.append(textEl);
         messagesEl.append(el);
         messagesEl.scrollTop = messagesEl.scrollHeight;
         return el;
+      }
+
+      // Turns exact spot-name mentions in an assistant reply into tappable
+      // links that fly the map to that spot and open its real info card —
+      // same card as tapping its marker, built from the same live rows
+      // already fetched for the spot table, so no extra request. Returns
+      // null (caller keeps plain text) if nothing in the reply matches a
+      // real spot name.
+      async function linkifySpotNames(text) {
+        const rows = await getSpotsRows();
+        if (!rows.length) return null;
+        // Longest name first, so a name that's a substring of a longer one
+        // doesn't get matched short.
+        const byLength = [...rows].sort((a, b) => (b.name || '').length - (a.name || '').length).filter((r) => r.name);
+        const pattern = byLength.map((r) => r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+        if (!pattern) return null;
+        const parts = text.split(new RegExp(`(${pattern})`, 'gi'));
+        if (parts.length === 1) return null;
+        const byNameLower = new Map(rows.map((r) => [r.name.toLowerCase(), r]));
+        const frag = document.createDocumentFragment();
+        for (const part of parts) {
+          const row = part && byNameLower.get(part.toLowerCase());
+          if (row) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'ai-spot-link';
+            btn.textContent = part;
+            btn.onclick = () => openSpotFromAI(row);
+            frag.append(btn);
+          } else if (part) {
+            frag.append(document.createTextNode(part));
+          }
+        }
+        return frag;
+      }
+
+      async function upgradeBubbleWithSpotLinks(bubbleEl, text) {
+        const frag = await linkifySpotNames(text);
+        if (!frag) return;
+        const textEl = bubbleEl.querySelector('.ai-msg-text');
+        if (!textEl) return;
+        textEl.textContent = '';
+        textEl.append(frag);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function openSpotFromAI(row) {
+        const feature = { properties: row, geometry: { type: 'Point', coordinates: [row.lon, row.lat] } };
+        if (mapRef) mapRef.flyTo({ center: [row.lon, row.lat], zoom: Math.max(mapRef.getZoom(), 11), duration: 800 });
+        showGemSpotCard(feature);
       }
 
       imageInput.onchange = () => {
@@ -1925,8 +1986,9 @@ ${spotsText}`;
           const spotsText = await getSpotsContextFor(text, settings.provider);
           const reply = await callAIProvider(settings, aiSystemPrompt(spotsText), history);
           typing.remove();
-          addBubble('assistant', reply || '(empty response)');
+          const replyEl = addBubble('assistant', reply || '(empty response)');
           history.push({ role: 'assistant', content: reply });
+          if (reply) upgradeBubbleWithSpotLinks(replyEl, reply); // async — bubble renders instantly, links pop in a beat later
         } catch (err) {
           typing.remove();
           // "Failed to fetch" is the browser's generic label for "no
