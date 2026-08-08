@@ -1545,7 +1545,8 @@
       custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Grok, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
     };
     const AI_SETTINGS_KEY = 'bc_ai_settings';
-    const AI_MAX_TOKENS = 1400;
+    const AI_MAX_TOKENS = 1000;
+    const MAX_HISTORY_MESSAGES = 12; // ~6 exchanges kept; older ones drop off rather than growing every request forever
 
     function loadAISettings() {
       try {
@@ -1598,7 +1599,7 @@
     // comfortably higher minimums, but still capped rather than
     // uncapped, since token cost/latency scales with this regardless of
     // provider and 287 spots will only grow over time.
-    const SPOTS_TOKEN_BUDGET = { anthropic: 20000, openai: 20000, google: 20000, groq: 6000, custom: 6000 };
+    const SPOTS_TOKEN_BUDGET = { anthropic: 20000, openai: 20000, google: 20000, groq: 5000, custom: 5000 };
     const approxTokens = (s) => Math.ceil(s.length / 4); // rough chars/4 heuristic, not a real tokenizer
 
     function spotSearchText(r) {
@@ -1649,14 +1650,23 @@
     }
 
     function aiSystemPrompt(spotsText) {
-      return `You are the Backcountry AI Trail Guide — an expert on dispersed and backcountry camping in Utah. Below is a table of real, curated spots (pipe-delimited, one per line, column order given in the header row), pulled live from this app's own recommendation database. It may only be a relevant subset of the full database, not necessarily everything that exists — see the note at the end of the table if some were left out.
+      return `You are the Backcountry AI Trail Guide, an expert on dispersed and backcountry camping in Utah. Below is a table of real, curated spots (pipe-delimited, column order in the header), pulled live from this app's database. It may be a partial, relevance-ranked subset, not the whole database — see the note at the end of the table if spots were left out.
 
-Rules:
-- Prefer recommending spots from the table below. Always cite the exact "name" column when you do, plus its access_type, view_type, and coord_precision, since those determine if it's actually reachable and how exact the location is.
-- If the user uploads a reference photo, first describe in a sentence or two what you see in it (terrain type, how open/framed the view is, alpine vs. desert vs. forest, water features, elevation cues) — then match that against the table's view_type/camp_type/notes columns.
-- If nothing in the table is a good match for what they're asking or what's in their photo, you may suggest a general area or type of location from your own knowledge that's likely to have something similar — but you MUST prefix any such suggestion with "⚠️ Unverified lead (not in our database):" and never invent precise-looking GPS coordinates or claim it as a confirmed real spot. Describe it by drainage/trailhead/area name instead, and tell the user to verify access, legality, and conditions themselves (official land-manager site, recent trip reports) before treating it as a real plan.
-- Keep answers focused and practical. Use a short list when comparing multiple spots.
-- Always remind users conditions (fire restrictions, road closures, seasonal access) change and should be checked with the land manager before heading out.
+HOW TO EVALUATE A SPOT (use this for matching existing spots AND any unverified lead you propose):
+- Wind/shelter: tree cover or a lee slope shelters better; open ridges/overlooks trade shelter for view.
+- Tent pad: gentle, well-drained ground; avoid drainages (flash flood risk) and >10-15% slope.
+- Water/LNT: camp 200+ ft from lakes/streams; near-water is a scenery plus but a shoreline-camping minus.
+- Treeline: Utah alpine zones start ~10,500-11,000 ft (lower south); below that expect forest cover, less view, more wind shelter.
+- Access: MVUM road class (passenger car / high-clearance / non-motorized) is a hard constraint, not a nice-to-know.
+- Prior use: an existing fire ring/cleared pad = already-impacted site, prefer it over a pristine one.
+- Season: alpine spots usually only open June/July-Sept (snowpack-dependent); low-desert is better shoulder-season, not summer.
+
+RULES:
+- Prefer the table below. Cite the exact name, access_type, view_type, and coord_precision.
+- For a reference photo: describe terrain/openness/water/elevation cues in a sentence, then match to view_type/camp_type/notes.
+- No good match? Suggest a general area from your own knowledge, prefixed "⚠️ Unverified lead (not in our database):" — never invent precise coordinates or claim it as confirmed. Name it by drainage/trailhead/area, and tell the user to verify access/legality/conditions themselves.
+- Be concise; use a short list when comparing spots.
+- Remind users conditions (fire restrictions, closures, seasonal access) change — check with the land manager before heading out.
 
 SPOT TABLE:
 ${spotsText}`;
@@ -1932,6 +1942,21 @@ ${spotsText}`;
           const el = addBubble('error', `Something went wrong: ${msg}`);
           el.classList.add('error');
         } finally {
+          // A reference photo's base64 is easily 10-40k+ tokens by
+          // itself — without this, every later turn in the same
+          // conversation would resend it again on top of the spot
+          // table, compounding fast toward a free-tier cap. The image
+          // has already done its job (this turn's request used it), so
+          // strip it from history now and keep only a short text note.
+          history = history.map((m) => {
+            if (!Array.isArray(m.content)) return m;
+            if (!m.content.some((c) => c.type === 'image')) return m;
+            const textPart = m.content.find((c) => c.type === 'text')?.text || '';
+            return { ...m, content: `${textPart} [reference photo omitted here to save space]` };
+          });
+          // Cap total turns kept, too, so a long conversation doesn't
+          // keep growing the request size forever.
+          if (history.length > MAX_HISTORY_MESSAGES) history = history.slice(-MAX_HISTORY_MESSAGES);
           sendBtn.disabled = false;
         }
       }
