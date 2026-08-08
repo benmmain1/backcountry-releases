@@ -265,12 +265,16 @@
     border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px;
   }
   #ai-settings-sheet .hint { font-size: 11.5px; color: var(--muted); margin: 4px 0 0; }
+  #ai-settings-sheet .hint a { color: var(--accent); font-weight: 700; text-decoration: none; }
   #ai-settings-sheet .save-btn {
     width: 100%; margin-top: 4px; padding: 11px; background: var(--accent); color: var(--accent-ink);
     border: none; border-radius: 999px; font-weight: 700; font-size: 14px; cursor: pointer;
   }
-  #ai-base-url-field { display: none; }
-  #ai-base-url-field.show { display: block; }
+  #ai-advanced { margin-bottom: 12px; }
+  #ai-advanced summary { font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; padding: 4px 0; }
+  #ai-advanced .field:first-of-type { margin-top: 10px; }
+  #ai-settings-error { color: #c8281e; min-height: 0; }
+  #ai-settings-error:empty { display: none; margin: 0; }
 
   #status {
     position: absolute; bottom: 12px; left: 12px; z-index: 2;
@@ -401,29 +405,35 @@
   <div id="ai-settings-sheet" class="sheet">
     <div class="grabber"></div>
     <h1>AI Guide Settings</h1>
-    <p>Your API key is stored only in this browser (localStorage) and sent directly from your browser to your chosen provider — it never passes through our servers.</p>
+    <p>Paste in an API key from any of these to turn on the AI guide. Your key stays in this browser and goes straight to whichever one you pick — it never passes through our servers.</p>
     <div class="field">
-      <label for="ai-provider-select">Provider</label>
+      <label for="ai-provider-select">Which AI</label>
       <select id="ai-provider-select">
-        <option value="anthropic">Anthropic (Claude)</option>
-        <option value="openai">OpenAI (GPT)</option>
-        <option value="google">Google (Gemini)</option>
-        <option value="custom">Custom (OpenAI-compatible — Groq, Together, Ollama, etc.)</option>
+        <option value="anthropic">Claude (Anthropic)</option>
+        <option value="openai">ChatGPT (OpenAI)</option>
+        <option value="google">Gemini (Google)</option>
+        <option value="custom">Other (Groq, Grok, etc.)</option>
       </select>
-    </div>
-    <div class="field" id="ai-base-url-field">
-      <label for="ai-base-url-input">Base URL</label>
-      <input type="text" id="ai-base-url-input" placeholder="https://api.groq.com/openai/v1/chat/completions" />
+      <p class="hint"><a id="ai-key-link" href="#" target="_blank" rel="noopener noreferrer">Get a free key ↗</a></p>
     </div>
     <div class="field">
       <label for="ai-key-input">API Key</label>
-      <input type="password" id="ai-key-input" autocomplete="off" placeholder="sk-..." />
+      <input type="password" id="ai-key-input" autocomplete="off" placeholder="Paste your key here" />
     </div>
-    <div class="field">
-      <label for="ai-model-input">Model</label>
-      <input type="text" id="ai-model-input" placeholder="claude-sonnet-5" />
-      <p class="hint" id="ai-model-hint"></p>
-    </div>
+    <details id="ai-advanced">
+      <summary>Advanced (usually not needed)</summary>
+      <div class="field" id="ai-base-url-field">
+        <label for="ai-base-url-input">Base URL</label>
+        <input type="text" id="ai-base-url-input" placeholder="https://api.groq.com/openai/v1/chat/completions" />
+        <p class="hint">Required if you picked "Other" above — the API address for that service.</p>
+      </div>
+      <div class="field">
+        <label for="ai-model-input">Model name</label>
+        <input type="text" id="ai-model-input" placeholder="claude-sonnet-5" />
+        <p class="hint" id="ai-model-hint"></p>
+      </div>
+    </details>
+    <p class="hint" id="ai-settings-error"></p>
     <button type="button" class="save-btn" id="ai-settings-save">Save</button>
   </div>
 
@@ -1518,10 +1528,10 @@
     // key. No proxy/backend needed, and the key never touches anything
     // we run.
     const AI_PROVIDERS = {
-      anthropic: { label: 'Anthropic (Claude)', defaultModel: 'claude-sonnet-5', hint: 'e.g. claude-sonnet-5, claude-opus-5, claude-haiku-4-5-20251001', needsBaseUrl: false },
-      openai: { label: 'OpenAI (GPT)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false },
-      google: { label: 'Google (Gemini)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false },
-      custom: { label: 'Custom (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Groq, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true },
+      anthropic: { label: 'Claude (Anthropic)', defaultModel: 'claude-sonnet-5', hint: 'e.g. claude-sonnet-5, claude-opus-5, claude-haiku-4-5-20251001', needsBaseUrl: false, keyUrl: 'https://console.anthropic.com/settings/keys' },
+      openai: { label: 'ChatGPT (OpenAI)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false, keyUrl: 'https://platform.openai.com/api-keys' },
+      google: { label: 'Gemini (Google)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
+      custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Groq, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
     };
     const AI_SETTINGS_KEY = 'bc_ai_settings';
     const AI_MAX_TOKENS = 1400;
@@ -1680,6 +1690,9 @@ ${spotsText}`;
       const keyInput = document.getElementById('ai-key-input');
       const modelInput = document.getElementById('ai-model-input');
       const modelHint = document.getElementById('ai-model-hint');
+      const keyLink = document.getElementById('ai-key-link');
+      const advancedDetails = document.getElementById('ai-advanced');
+      const settingsError = document.getElementById('ai-settings-error');
       const settingsSave = document.getElementById('ai-settings-save');
 
       let settings = loadAISettings();
@@ -1692,29 +1705,50 @@ ${spotsText}`;
         chatWrap.style.display = configured ? '' : 'none';
       }
 
+      // Shared between filling the form from saved settings and reacting
+      // to the provider dropdown changing — both need the same "Other"
+      // needs a base URL + no single signup link, so the advanced section
+      // auto-opens and the key-link hint hides.
+      function updateProviderChrome(providerId) {
+        const cfg = AI_PROVIDERS[providerId];
+        baseUrlField.classList.toggle('show', cfg.needsBaseUrl);
+        modelHint.textContent = cfg.hint;
+        if (cfg.keyUrl) { keyLink.href = cfg.keyUrl; keyLink.style.display = ''; }
+        else keyLink.style.display = 'none';
+        if (cfg.needsBaseUrl) advancedDetails.open = true;
+      }
+
       function fillSettingsForm() {
         providerSelect.value = settings.provider;
-        baseUrlField.classList.toggle('show', AI_PROVIDERS[settings.provider].needsBaseUrl);
         baseUrlInput.value = settings.baseUrl || '';
         keyInput.value = settings.apiKey || '';
         modelInput.value = settings.model || AI_PROVIDERS[settings.provider].defaultModel;
-        modelHint.textContent = AI_PROVIDERS[settings.provider].hint;
+        settingsError.textContent = '';
+        updateProviderChrome(settings.provider);
       }
 
       providerSelect.onchange = () => {
         const cfg = AI_PROVIDERS[providerSelect.value];
-        baseUrlField.classList.toggle('show', cfg.needsBaseUrl);
-        modelHint.textContent = cfg.hint;
+        updateProviderChrome(providerSelect.value);
         if (cfg.defaultModel) modelInput.value = cfg.defaultModel;
       };
 
       settingsSave.onclick = () => {
-        settings = {
-          provider: providerSelect.value,
-          apiKey: keyInput.value.trim(),
-          model: modelInput.value.trim(),
-          baseUrl: baseUrlInput.value.trim(),
-        };
+        const provider = providerSelect.value;
+        const apiKey = keyInput.value.trim();
+        const model = modelInput.value.trim() || AI_PROVIDERS[provider].defaultModel;
+        const baseUrl = baseUrlInput.value.trim();
+
+        if (!apiKey) { settingsError.textContent = 'Paste in an API key first.'; return; }
+        if (AI_PROVIDERS[provider].needsBaseUrl && !baseUrl) {
+          settingsError.textContent = 'This provider needs a Base URL — open "Advanced" above and fill it in.';
+          advancedDetails.open = true;
+          return;
+        }
+        if (!model) { settingsError.textContent = 'Open "Advanced" and enter a model name for this provider.'; advancedDetails.open = true; return; }
+
+        settingsError.textContent = '';
+        settings = { provider, apiKey, model, baseUrl };
         saveAISettings(settings);
         refreshChatVisibility();
         closeSheets();
