@@ -74,6 +74,7 @@
       "id": "hillshade",
       "type": "hillshade",
       "source": "terrain",
+      "minzoom": 6,
       "layout": {
         "visibility": "visible"
       },
@@ -137,6 +138,7 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
+      "minzoom": 8,
       "filter": [
         "==",
         [
@@ -219,6 +221,7 @@
       "type": "fill",
       "source": "backcountry",
       "source-layer": "public_land",
+      "minzoom": 8,
       "filter": [
         "==",
         [
@@ -439,6 +442,7 @@
       "type": "line",
       "source": "backcountry",
       "source-layer": "public_land",
+      "minzoom": 8,
       "filter": [
         "==",
         [
@@ -553,6 +557,7 @@
       "type": "line",
       "source": "backcountry",
       "source-layer": "public_land",
+      "minzoom": 8,
       "filter": [
         "==",
         [
@@ -832,6 +837,7 @@
       "type": "line",
       "source": "backcountry",
       "source-layer": "contours",
+      "minzoom": 9,
       "layout": {
         "visibility": "none"
       },
