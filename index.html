@@ -437,21 +437,16 @@
         title: 'Camping & Recreation',
         items: [
           { id: 'developed-rec', label: 'Campgrounds & Rec Sites', color: '#ff9a52' },
-          // A real "spots" source-layer doesn't exist yet — a separate
-          // discovery pipeline is generating it for a pilot area — so this
-          // stays honest about that instead of a dead/missing row: the
-          // toggle is real (it lights up the moment data exists, no code
-          // change needed) but note() below explains why it does nothing
-          // today rather than pretending the feature is finished.
-          {
-            id: 'spots', label: 'Camp Spots', color: '#1e7a4a',
-            note: (manifest) => {
-              const count = manifest?.spot_count ?? 0;
-              return count > 0
-                ? `${count.toLocaleString()} candidate spots indexed so far.`
-                : 'Not yet available for most of Utah — spot discovery is still in progress.';
-            },
-          },
+          // A curated "gem spots" dataset was hand-added here on an
+          // earlier branch, disconnected from the real discovery
+          // pipeline (its manifest still reports spot_count: 0,
+          // spots_file: null - checked directly against the live
+          // manifest.json, not assumed) - removed rather than presented
+          // as a finished feature it isn't. The star-button scanner
+          // below finds camp-worthy spots from this app's own real,
+          // manifest-tracked data instead, live, no pre-baked dataset
+          // required. This row comes back once manifest.spots_file
+          // actually points at something.
         ],
       },
     ];
@@ -882,9 +877,8 @@
         return total / RAY_COUNT;
       }
 
-      // Reads the same checkboxes the Spot Insights filters use — "what
-      // am I looking for" means the same thing whether you're filtering
-      // the existing verified spots or scanning for a brand new one.
+      // Reads the Scan Preferences checkboxes to steer what counts as a
+      // good candidate — water/wooded/panoramic/etc.
       async function scanForCampSpots() {
         const bounds = map.getBounds();
         const w = bounds.getWest(), e = bounds.getEast(), s = bounds.getSouth(), n = bounds.getNorth();
@@ -1038,7 +1032,7 @@
         scanBtn.classList.add('active');
         const activePrefs = [...spotFilterState.view, ...spotFilterState.camp];
         say(activePrefs.length
-          ? `Scanning for a spot matching your Spot Insights filters (${activePrefs.length}) — can take a few seconds…`
+          ? `Scanning for a spot matching your Scan Preferences (${activePrefs.length}) — can take a few seconds…`
           : 'Scanning this view for camp-worthy ground — a thorough pass, can take a few seconds…');
         try {
           const results = await scanForCampSpots();
@@ -1066,7 +1060,7 @@
           scanResultsShown = true;
           say(results.length
             ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping. Tap a pin for details.`
-            : 'No candidates matched in this view — try loosening your Spot Insights filters, or pan over USFS/BLM land near a dispersed-camping route');
+            : 'No candidates matched in this view — try loosening your Scan Preferences, or pan over USFS/BLM land near a dispersed-camping route');
         } catch (err) {
           console.error('Camp spot scan failed', err);
           say('Spot scan failed — try again', 'error');
@@ -1074,22 +1068,13 @@
         }
       };
 
-      // Spot Insights: enriches the existing 82-site "hidden gem" dataset
-      // (real slope_degrees / flat_area_m2 / legal_reason already computed
-      // by a separate, more rigorous pipeline than anything client-side
-      // here can match - checked directly by decoding the archive) with
-      // two things that pipeline doesn't currently produce: a view-type
-      // tag and a rough camp-type suitability tag, plus a cross-check
-      // against this app's own terrain data as a second-opinion flag
-      // rather than an override. Never deletes or overrides the pipeline's
-      // own numbers - it only adds runtime feature-state alongside them.
-      //
-      // Tree/water signal comes from USGS/MRLC's public NLCD (National
-      // Land Cover Database) map service - free, keyless, and actually
-      // CORS-enabled (checked directly against real coordinates: Utah
-      // Lake correctly returned the "Open Water" class) - giving a real
-      // percent-tree-canopy figure and land-cover class instead of
-      // guessing from satellite image color.
+      // Tree/water signal for the scanner's preference checkboxes, from
+      // USGS/MRLC's public NLCD (National Land Cover Database) map
+      // service - free, keyless, and actually CORS-enabled (checked
+      // directly against real coordinates: Utah Lake correctly returned
+      // the "Open Water" class) - giving a real percent-tree-canopy
+      // figure and land-cover class instead of guessing from satellite
+      // image color.
       const NLCD_WMS = 'https://www.mrlc.gov/geoserver/mrlc_display/wms';
       const NLCD_LAND_COVER_LAYER = 'NLCD_2021_Land_Cover_L48';
       const NLCD_CANOPY_LAYER = 'mrlc_display:nlcd_tcc_conus_2011_v2021-4';
@@ -1112,125 +1097,9 @@
         return result;
       }
 
-      // A rough slope estimate from the same elevation-swing sample used
-      // for the camp scanner's flatness check, converted to degrees, as a
-      // second opinion against the pipeline's own slope_degrees - not a
-      // replacement for it. ROUGHNESS_SAMPLE_DEG is the sample ring's
-      // radius in degrees; converting to meters gives the "run" for a
-      // rise/run slope estimate.
-      function roughnessToSlopeDegrees(roughnessMeters, lat) {
-        if (roughnessMeters == null) return null;
-        const { perDegLat } = metersToDegrees(lat);
-        const runMeters = ROUGHNESS_SAMPLE_DEG * perDegLat;
-        return Math.atan(roughnessMeters / runMeters) * (180 / Math.PI);
-      }
-
-      async function enrichSpot(feature) {
-        const [lng, lat] = feature.geometry.coordinates;
-        const props = feature.properties;
-
-        const [landCover, canopyPct] = await Promise.all([
-          queryNlcd(NLCD_LAND_COVER_LAYER, [lng, lat]),
-          queryNlcd(NLCD_CANOPY_LAYER, [lng, lat]),
-        ]);
-        const wooded = NLCD_FOREST_CLASSES.has(landCover) || (canopyPct != null && canopyPct >= 30);
-        const nearWater = NLCD_WATER_CLASSES.has(landCover);
-
-        const openness = opennessMeters([lng, lat]);
-        const roughness = localRoughness([lng, lat]);
-        const openView = openness != null && openness >= 300;
-        const panoramic = openness != null && openness >= 700;
-
-        const viewTags = [];
-        if (nearWater) viewTags.push('water');
-        if (panoramic) viewTags.push('panoramic');
-        else if (openView) viewTags.push('open-valley');
-        if (wooded) viewTags.push('wooded');
-        if (!viewTags.length) viewTags.push('sheltered');
-
-        // flat_area_m2 and slope_degrees are the pipeline's own verified
-        // numbers - reused here, not recomputed. Hammock camping doesn't
-        // need flat ground the way a tent or trailer does, so it's keyed
-        // on tree cover instead.
-        const campTags = [];
-        if ((props.flat_area_m2 || 0) >= 20) campTags.push('tent');
-        if (wooded) campTags.push('hammock');
-        if ((props.flat_area_m2 || 0) >= 500) campTags.push('trailer');
-
-        const roughnessSlope = roughnessToSlopeDegrees(roughness, lat);
-        const slopeDelta = roughnessSlope != null && props.slope_degrees != null
-          ? Math.abs(roughnessSlope - props.slope_degrees) : null;
-        // A generous threshold - this app's DEM sampling is coarser than
-        // whatever produced the pipeline's own figure, so this is meant to
-        // catch real disagreements, not add noise from measurement error.
-        const needsReview = slopeDelta != null && slopeDelta > 8;
-
-        return { id: props.id, viewTags, campTags, needsReview };
-      }
-
-      let spotEnrichment = new Map(); // id -> result, kept for the filter UI
-
-      async function analyzeSpots() {
-        if (!terrainOn) {
-          say('Turn on 3D terrain first — spot analysis reads real elevation data off the terrain mesh', 'warn');
-          return;
-        }
-        const rawFeatures = map.querySourceFeatures('spots', { sourceLayer: 'spots' });
-        const byId = new Map();
-        for (const f of rawFeatures) {
-          if (f.geometry?.type === 'Point' && !byId.has(f.properties.id)) byId.set(f.properties.id, f);
-        }
-        const uniqueFeatures = [...byId.values()];
-        if (!uniqueFeatures.length) {
-          say('No spots loaded in view yet — pan/zoom over the Moab · Manti-La Sal pilot area first', 'warn');
-          return;
-        }
-
-        const analyzeSpotsBtn = document.getElementById('analyze-spots-btn');
-        if (analyzeSpotsBtn) analyzeSpotsBtn.disabled = true;
-        say(`Analyzing ${uniqueFeatures.length} spot${uniqueFeatures.length === 1 ? '' : 's'} — checking terrain + government land-cover data…`);
-
-        const CONCURRENCY = 6;
-        for (let i = 0; i < uniqueFeatures.length; i += CONCURRENCY) {
-          const batch = uniqueFeatures.slice(i, i + CONCURRENCY);
-          const results = await Promise.all(batch.map((f) => enrichSpot(f).catch((err) => {
-            console.warn('Spot enrichment failed', err);
-            return null;
-          })));
-          for (const r of results) {
-            if (!r) continue;
-            spotEnrichment.set(r.id, r);
-            map.setFeatureState({ source: 'spots', sourceLayer: 'spots', id: r.id }, {
-              needsReview: r.needsReview,
-              openValley: r.viewTags.includes('open-valley') || r.viewTags.includes('panoramic'),
-              panoramic: r.viewTags.includes('panoramic'),
-              waterView: r.viewTags.includes('water'),
-              wooded: r.viewTags.includes('wooded'),
-              tentOk: r.campTags.includes('tent'),
-              hammockOk: r.campTags.includes('hammock'),
-              trailerOk: r.campTags.includes('trailer'),
-            });
-          }
-        }
-
-        if (analyzeSpotsBtn) analyzeSpotsBtn.disabled = false;
-        for (const box of document.querySelectorAll('.spot-filter-checkbox')) box.disabled = false;
-        const flagged = [...spotEnrichment.values()].filter((r) => r.needsReview).length;
-        say(`Analyzed ${spotEnrichment.size} spot${spotEnrichment.size === 1 ? '' : 's'}${flagged ? ` — ${flagged} flagged for a second look` : ''}`);
-        applySpotFilters();
-      }
-
+      // What the scanner searches for — set directly by the preference
+      // checkboxes, read live by scanForCampSpots() each time it runs.
       const spotFilterState = { view: new Set(), camp: new Set() };
-      function applySpotFilters() {
-        const clauses = [];
-        if (spotFilterState.view.size) {
-          clauses.push(['any', ...[...spotFilterState.view].map((tag) => ['==', ['feature-state', tag], true])]);
-        }
-        if (spotFilterState.camp.size) {
-          clauses.push(['any', ...[...spotFilterState.camp].map((tag) => ['==', ['feature-state', tag], true])]);
-        }
-        map.setFilter('spots', clauses.length ? ['all', ...clauses] : null);
-      }
 
       // Personal, on-device saved spots. There's no live backend here to
       // publish into the shared 82-site verified dataset — that lives in
@@ -1351,55 +1220,6 @@
         body.append(btn);
       }
 
-      function showSpotCard(feature) {
-        const props = feature.properties;
-        setInfoIcon(SPOT_STYLE);
-        openInfoCard('Camp Spot', props.unit_name || 'Dispersed Camp Spot', (body) => {
-          const badges = document.createElement('div');
-          badges.className = 'info-badges';
-          badges.append(badge(`Score ${(props.score * 100).toFixed(0)}`));
-          if (props.slope_degrees != null) badges.append(badge(`${props.slope_degrees.toFixed(1)}° slope`));
-          if (props.flat_area_m2) badges.append(badge(`${Math.round(props.flat_area_m2).toLocaleString()} m² pad`));
-          body.append(badges);
-
-          const enrichment = spotEnrichment.get(props.id);
-          if (enrichment) {
-            if (enrichment.needsReview) {
-              body.append(paragraph('⚠ This app\'s own rough terrain check disagrees with this spot\'s recorded slope — worth a second look, not necessarily wrong.', 'info-desc'));
-            }
-            const tagBadges = document.createElement('div');
-            tagBadges.className = 'info-badges';
-            for (const tag of enrichment.viewTags) tagBadges.append(badge(VIEW_TAG_LABELS[tag] || tag));
-            for (const tag of enrichment.campTags) tagBadges.append(badge(tag === 'tent' ? 'Tent OK' : tag === 'hammock' ? 'Hammock OK' : 'Trailer OK', 'status-open'));
-            body.append(tagBadges);
-          } else {
-            body.append(paragraph('Run "Analyze spots in view" (Map Layers → Spot Insights) for view-type and camp-type tags.', 'info-desc'));
-          }
-
-          const facts = document.createElement('div');
-          facts.className = 'info-facts';
-          [
-            factRow('Stay limit', props.stay_limit_days ? `${props.stay_limit_days} days` : null),
-            factRow('Access road', props.source_route),
-            factRow('Pad notes', props.pad_reason),
-          ].forEach((row) => row && facts.append(row));
-          if (facts.children.length) body.append(facts);
-
-          if (props.legal_reason) {
-            body.append(sectionTitle('Legal basis'));
-            body.append(paragraph(props.legal_reason));
-          }
-          const link = externalLink(props.legal_source, 'Source regulation ↗');
-          if (link) body.append(link);
-
-          appendSaveButton(body, {
-            id: `official-${props.id}`,
-            label: props.unit_name || 'Dispersed Camp Spot',
-            coordinates: feature.geometry.coordinates,
-            source: 'official',
-          });
-        }, feature.geometry.coordinates);
-      }
 
       function showScanResultCard(feature) {
         const props = feature.properties;
@@ -1436,14 +1256,11 @@
       }
 
       // Separate from setupInfoClicks (which only knows about static
-      // style.json layers): 'spots' plus the dynamically-added
-      // camp-spot-*/saved-spot-* layers, checked fresh on every click
-      // since the latter two don't exist until a scan has run or
-      // something's been saved.
+      // style.json layers): camp-spot-*/saved-spot-* only exist once a
+      // scan's run or something's been saved, so they're checked fresh
+      // on every click
+      // rather than once up front.
       function setupSpotClicks() {
-        map.on('mouseenter', 'spots', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'spots', () => { map.getCanvas().style.cursor = ''; });
-
         map.on('click', (e) => {
           const hitBox = [[e.point.x - 16, e.point.y - 16], [e.point.x + 16, e.point.y + 16]];
           const scanLayers = ['camp-spot-dot', 'camp-spot-label'].filter((id) => map.getLayer(id));
@@ -1456,33 +1273,23 @@
             const [saved] = map.queryRenderedFeatures(hitBox, { layers: savedLayers });
             if (saved) return showSavedSpotCard(saved);
           }
-          const [spot] = map.queryRenderedFeatures(hitBox, { layers: ['spots'] });
-          if (spot) return showSpotCard(spot);
         });
       }
 
-      function buildSpotInsightsPanel() {
+      function buildScanPreferencesPanel() {
         if (!document.querySelector('#layers-body')) return;
         const body = document.getElementById('layers-body');
         const wrap = document.createElement('div');
         wrap.className = 'group';
 
         const heading = document.createElement('h2');
-        heading.textContent = 'Spot Insights';
+        heading.textContent = 'Scan Preferences';
         wrap.append(heading);
 
         const note = document.createElement('p');
         note.className = 'group-note';
-        note.textContent = "Adds a view-type and camp-type tag to each indexed camp spot, from real terrain shape plus government tree-canopy/water data — alongside that dataset's own verified slope and legal info, not instead of it. These same checkboxes also steer the star-button scanner (find spots matching what you check here) and \"Save to this device\" on any spot's card keeps a personal copy — on this device only, not published anywhere. Needs 3D terrain on, and spots loaded in view (pan over the pilot area first).";
+        note.textContent = 'What the star-button scanner searches for — check any of these and the next scan looks for spots matching them, using real terrain shape plus government tree-canopy/water data. Leave everything unchecked for a general flat-and-open search.';
         wrap.append(note);
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = 'analyze-spots-btn';
-        btn.className = 'panel-btn';
-        btn.textContent = 'Analyze spots in view';
-        btn.onclick = analyzeSpots;
-        wrap.append(btn);
 
         const filterDefs = [
           { group: 'view', key: 'openValley', label: 'Open valley view' },
@@ -1497,19 +1304,16 @@
           const sub = document.createElement('p');
           sub.className = 'group-note';
           sub.style.marginTop = groupName === 'camp' ? '10px' : '6px';
-          sub.textContent = groupName === 'view' ? 'Filter by view type (run analysis first)' : 'Filter by camp type (run analysis first)';
+          sub.textContent = groupName === 'view' ? 'View type' : 'Camp type';
           wrap.append(sub);
           for (const def of filterDefs.filter((d) => d.group === groupName)) {
             const row = document.createElement('label');
             row.className = 'row';
             const box = document.createElement('input');
             box.type = 'checkbox';
-            box.className = 'spot-filter-checkbox';
-            box.disabled = true; // no feature-state exists until analysis runs — checking one now would just hide everything
             box.onchange = () => {
               const set = spotFilterState[def.group];
               if (box.checked) set.add(def.key); else set.delete(def.key);
-              applySpotFilters();
             };
             const label = document.createElement('span');
             label.className = 'label';
@@ -1547,7 +1351,7 @@
         regionLabel.textContent = manifest ? manifest.state_name : '';
         say('Map loaded');
         buildLayerPanel(map, style, manifest);
-        buildSpotInsightsPanel();
+        buildScanPreferencesPanel();
         setupInfoClicks(map, style);
         setupSpotClicks();
         if (savedSpots.length) refreshSavedSpotsLayer();
@@ -1862,13 +1666,12 @@
     }
 
     const SPOT_STYLE = { color: '#1e7a4a', icon: ICON_SVG.tent };
-    const VIEW_TAG_LABELS = { 'open-valley': 'Open valley view', panoramic: 'Panoramic view', water: 'Near water', wooded: 'Wooded / shaded', sheltered: 'Sheltered' };
 
-    // showSpotCard / showScanResultCard / showSavedSpotCard live inside
-    // start() now, not here — they read spotEnrichment, lastScanResults,
-    // and the save/unsave functions, all of which are local to that
-    // map instance's setup rather than reusable top-level state like
-    // showRecSiteCard/showTrailCard's helpers are.
+    // showScanResultCard / showSavedSpotCard live inside start() now, not
+    // here — they read lastScanResults and the save/unsave functions,
+    // all of which are local to that map instance's setup rather than
+    // reusable top-level state like showRecSiteCard/showTrailCard's
+    // helpers are.
 
     function setupInfoClicks(map, style) {
       const styleIds = new Set(style.layers.map((l) => l.id));

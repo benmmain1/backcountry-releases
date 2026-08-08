@@ -20,11 +20,6 @@
       "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/terrain-ut.pmtiles",
       "tileSize": 512
     },
-    "spots": {
-      "type": "vector",
-      "url": "pmtiles://https://pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev/ut/spots-ut-pilot.pmtiles",
-      "promoteId": "id"
-    },
     "satellite": {
       "type": "raster",
       "tiles": [
@@ -1099,68 +1094,6 @@
         "text-color": "#eceee9",
         "text-halo-color": "rgba(20,22,18,0.85)",
         "text-halo-width": 1.2
-      }
-    },
-    {
-      "id": "spots",
-      "type": "circle",
-      "source": "spots",
-      "source-layer": "spots",
-      "layout": {
-        "visibility": "visible"
-      },
-      "paint": {
-        "circle-radius": [
-          "interpolate",
-          [
-            "linear"
-          ],
-          [
-            "zoom"
-          ],
-          8,
-          [
-            "+",
-            2,
-            [
-              "*",
-              2,
-              [
-                "get",
-                "score"
-              ]
-            ]
-          ],
-          14,
-          [
-            "+",
-            5,
-            [
-              "*",
-              6,
-              [
-                "get",
-                "score"
-              ]
-            ]
-          ]
-        ],
-        "circle-color": [
-          "interpolate",
-          [
-            "linear"
-          ],
-          [
-            "get",
-            "obscurity"
-          ],
-          0,
-          "#8a8a8a",
-          1,
-          "#1e7a4a"
-        ],
-        "circle-stroke-width": ["case", ["==", ["feature-state", "needsReview"], true], 2.5, 1.2],
-        "circle-stroke-color": ["case", ["==", ["feature-state", "needsReview"], true], "#f5a623", "#ffffff"]
       }
     }
   ]
