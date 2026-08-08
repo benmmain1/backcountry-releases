@@ -273,6 +273,11 @@
   #ai-advanced { margin-bottom: 12px; }
   #ai-advanced summary { font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; padding: 4px 0; }
   #ai-advanced .field:first-of-type { margin-top: 10px; }
+  .ai-url-quickfill { display: flex; gap: 6px; margin-top: 6px; }
+  .ai-url-quickfill button {
+    flex: 1; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border); background: none;
+    color: var(--accent); font-weight: 700; font-size: 12px; cursor: pointer;
+  }
   #ai-settings-error { color: #c8281e; min-height: 0; }
   #ai-settings-error:empty { display: none; margin: 0; }
 
@@ -425,7 +430,11 @@
       <div class="field" id="ai-base-url-field">
         <label for="ai-base-url-input">Base URL</label>
         <input type="text" id="ai-base-url-input" placeholder="https://api.groq.com/openai/v1/chat/completions" />
-        <p class="hint">Required if you picked "Other" above — the API address for that service.</p>
+        <p class="hint">Required if you picked "Other" above — the API address for that service. Easy to mistype by hand, so tap one instead if it's one of these:</p>
+        <div class="ai-url-quickfill">
+          <button type="button" data-url="https://api.groq.com/openai/v1/chat/completions">Use Groq</button>
+          <button type="button" data-url="https://api.x.ai/v1/chat/completions">Use Grok (xAI)</button>
+        </div>
       </div>
       <div class="field">
         <label for="ai-model-input">Model name</label>
@@ -1733,6 +1742,10 @@ ${spotsText}`;
         if (cfg.defaultModel) modelInput.value = cfg.defaultModel;
       };
 
+      for (const btn of document.querySelectorAll('.ai-url-quickfill button')) {
+        btn.onclick = () => { baseUrlInput.value = btn.dataset.url; settingsError.textContent = ''; };
+      }
+
       settingsSave.onclick = () => {
         const provider = providerSelect.value;
         const apiKey = keyInput.value.trim();
@@ -1740,10 +1753,23 @@ ${spotsText}`;
         const baseUrl = baseUrlInput.value.trim();
 
         if (!apiKey) { settingsError.textContent = 'Paste in an API key first.'; return; }
-        if (AI_PROVIDERS[provider].needsBaseUrl && !baseUrl) {
-          settingsError.textContent = 'This provider needs a Base URL — open "Advanced" above and fill it in.';
-          advancedDetails.open = true;
-          return;
+        if (AI_PROVIDERS[provider].needsBaseUrl) {
+          if (!baseUrl) {
+            settingsError.textContent = 'This provider needs a Base URL — open "Advanced" above and fill it in, or tap one of the quick-fill buttons.';
+            advancedDetails.open = true;
+            return;
+          }
+          // Catch the most common failure mode (a mistyped URL) at save
+          // time with a specific message, instead of a generic "Failed to
+          // fetch" once they're mid-conversation with no way to tell a
+          // typo from a real network/CORS problem.
+          let parsed;
+          try { parsed = new URL(baseUrl); } catch { parsed = null; }
+          if (!parsed || parsed.protocol !== 'https:') {
+            settingsError.textContent = 'That Base URL doesn\'t look valid — it needs to start with https:// and be the full address, e.g. https://api.groq.com/openai/v1/chat/completions';
+            advancedDetails.open = true;
+            return;
+          }
         }
         if (!model) { settingsError.textContent = 'Open "Advanced" and enter a model name for this provider.'; advancedDetails.open = true; return; }
 
@@ -1827,7 +1853,17 @@ ${spotsText}`;
           history.push({ role: 'assistant', content: reply });
         } catch (err) {
           typing.remove();
-          const el = addBubble('error', `Something went wrong: ${err.message}`);
+          // "Failed to fetch" is the browser's generic label for "no
+          // response came back at all" — could be the provider being
+          // unreachable, a network/ad-blocker block, or (most common in
+          // practice) a bad Base URL — and unlike an auth/model error
+          // from the provider itself, there's no server-supplied message
+          // to show, so say what to actually go check instead of
+          // repeating the unhelpful raw text.
+          const msg = err.message === 'Failed to fetch'
+            ? 'Could not reach the AI service at all. If you picked "Other", double-check the Base URL in AI Guide Settings → Advanced. Otherwise this is likely a network block on this connection.'
+            : err.message;
+          const el = addBubble('error', `Something went wrong: ${msg}`);
           el.classList.add('error');
         } finally {
           sendBtn.disabled = false;
