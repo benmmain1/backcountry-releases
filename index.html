@@ -421,7 +421,12 @@
 
   <div id="ai-settings-sheet" class="sheet">
     <div class="grabber"></div>
-    <h1>AI Guide Settings</h1>
+    <div class="info-head">
+      <h1>AI Guide Settings</h1>
+      <button id="ai-settings-close" type="button" class="ai-icon-btn" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
     <p>Paste in an API key from any of these to turn on the AI guide. Your key stays in this browser and goes straight to whichever one you pick — it never passes through our servers.</p>
     <div class="field">
       <label for="ai-provider-select">Which AI</label>
@@ -1859,6 +1864,7 @@ ${spotsText}`;
       }
 
       function fillSettingsForm() {
+        settings = loadAISettings(); // re-read from storage, not a possibly-stale in-memory copy
         providerSelect.value = settings.provider;
         baseUrlInput.value = settings.baseUrl || '';
         keyInput.value = settings.apiKey || '';
@@ -1916,6 +1922,15 @@ ${spotsText}`;
 
       settingsBtn.onclick = () => { fillSettingsForm(); toggleSheet(aiSettingsSheet, null); };
       setupBtn.onclick = () => { fillSettingsForm(); toggleSheet(aiSettingsSheet, null); };
+      document.getElementById('ai-settings-close').onclick = closeSheets;
+      // Overrides the plain top-level toggle wired before this function ran
+      // — also re-syncs from storage first, so the configured/not-configured
+      // view can't go stale relative to what's actually saved.
+      aiBtn.onclick = () => {
+        settings = loadAISettings();
+        refreshChatVisibility();
+        toggleSheet(aiSheet, aiBtn);
+      };
 
       function addBubble(role, text, imageDataUrl) {
         const el = document.createElement('div');
