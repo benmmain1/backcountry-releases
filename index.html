@@ -381,10 +381,15 @@
   }
   @media (min-width: 640px) { #ai-sheet { width: 380px; max-height: min(640px, 82vh); } }
   #ai-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px 0 10px; min-height: 120px; }
-  .ai-msg { max-width: 88%; padding: 9px 13px; border-radius: 14px; font-size: 13.5px; white-space: pre-line; }
+  .ai-msg { max-width: 88%; padding: 9px 13px; border-radius: 14px; font-size: 13.5px; }
   .ai-msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
   .ai-msg.assistant { align-self: flex-start; background: var(--border); border-bottom-left-radius: 4px; }
   .ai-msg.error { align-self: stretch; background: rgba(200,40,30,.14); color: #c8281e; }
+  /* Plain-text-with-structure rendering (see renderAIText) — short
+     paragraphs and simple bullet lists, no headers/tables/nested markup. */
+  .ai-msg-text { display: flex; flex-direction: column; gap: 8px; }
+  .ai-msg-para { margin: 0; }
+  .ai-msg-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
   .ai-msg img.ai-msg-image { display: block; width: 100%; max-width: 220px; border-radius: 10px; margin-bottom: 6px; }
   .ai-msg .ai-spot-link {
     display: inline; border: none; background: none; padding: 0; margin: 0;
@@ -3764,6 +3769,7 @@ HOW TO EVALUATE A SPOT (use this for matching existing spots AND any unverified 
 - Season: alpine spots usually only open June/July-Sept (snowpack-dependent); low-desert is better shoulder-season, not summer.
 
 RULES:
+- Write in plain conversational text, not markdown: no asterisks, no bold/italic markers, no pound-sign headers, no code fences. If you're listing more than one spot, put each one in its own short paragraph (blank line between) starting with the spot's name, not a bulleted or numbered list. This is a phone chat bubble, not a rendered document.
 - Prefer the table below, but ONLY treat a row as an answer to a NAMED place (a specific trail, canyon, peak, cabin, route) if its forest/coordinates/description actually connect to that named place. Sharing a general tag with the question (wilderness, hammock-friendly, a view_type) is NOT enough to call it a match — a spot in a different canyon/drainage than the one asked about is not a match just because it's generally similar. If nothing in the table is actually connected to the specific place named, say that plainly (per the unverified-lead rule below) instead of substituting a loosely-similar row as if it answers the question.
 - Write like a person, not a database dump: describe access, views, and elevation in plain sentences using what the columns mean (e.g. "a short backpack in, open July through September, GPS is approximate") — never recite raw column names or values verbatim (e.g. never write "access_type is backpack_short" or "coord_precision is approx"). Do still cite the spot's real name exactly so it links correctly.
 - For a reference photo: describe terrain/openness/water/elevation cues in a sentence, then match to view_type/camp_type/notes using the same actually-connected standard above, not just a vibe match.
@@ -4022,6 +4028,57 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
         toggleSheet(aiSheet, aiBtn);
       };
 
+      // The system prompt asks the model for plain prose, not markdown —
+      // but that's an instruction, not a guarantee, and different
+      // providers comply with varying reliability. This is the backstop:
+      // render **bold** and bullet lines properly instead of showing the
+      // raw asterisks, so a reply reads clean even if a provider ignores
+      // the instruction. Deliberately narrow (bold + bullets only, no
+      // full markdown/HTML) and built via real DOM nodes throughout —
+      // model output never touches innerHTML anywhere in this function.
+      function renderAIText(container, text) {
+        const lines = text.split('\n');
+        let i = 0;
+        while (i < lines.length) {
+          const line = lines[i];
+          if (/^\s*[-*]\s+/.test(line)) {
+            const ul = document.createElement('ul');
+            ul.className = 'ai-msg-list';
+            while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+              const li = document.createElement('li');
+              appendInlineFormatting(li, lines[i].replace(/^\s*[-*]\s+/, ''));
+              ul.append(li);
+              i++;
+            }
+            container.append(ul);
+          } else if (line.trim() === '') {
+            i++; // blank lines just separate paragraphs, which already have their own spacing
+          } else {
+            const p = document.createElement('p');
+            p.className = 'ai-msg-para';
+            appendInlineFormatting(p, line.replace(/^#+\s*/, ''));
+            container.append(p);
+            i++;
+          }
+        }
+      }
+      // Splits on **bold** markers and appends real text/<strong> nodes —
+      // never sets innerHTML, so this is safe against a reply that
+      // contains literal HTML/script-looking text.
+      function appendInlineFormatting(el, line) {
+        const parts = line.split(/(\*\*[^*]+\*\*)/g);
+        for (const part of parts) {
+          const boldMatch = /^\*\*([^*]+)\*\*$/.exec(part);
+          if (boldMatch) {
+            const strong = document.createElement('strong');
+            strong.textContent = boldMatch[1];
+            el.append(strong);
+          } else if (part) {
+            el.append(document.createTextNode(part));
+          }
+        }
+      }
+
       function addBubble(role, text, imageDataUrl) {
         const el = document.createElement('div');
         el.className = `ai-msg ${role}`;
@@ -4032,9 +4089,9 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           img.alt = '';
           el.append(img);
         }
-        const textEl = document.createElement('span');
+        const textEl = document.createElement('div');
         textEl.className = 'ai-msg-text';
-        textEl.textContent = text;
+        renderAIText(textEl, text);
         el.append(textEl);
         messagesEl.append(el);
         messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -4044,45 +4101,54 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
       // Turns exact spot-name mentions in an assistant reply into tappable
       // links that fly the map to that spot and open its real info card —
       // same card as tapping its marker, built from the same live rows
-      // already fetched for the spot table, so no extra request. Returns
-      // null (caller keeps plain text) if nothing in the reply matches a
-      // real spot name.
-      async function linkifySpotNames(text) {
+      // already fetched for the spot table, so no extra request. Walks
+      // the bubble's already-rendered text nodes (paragraphs/list items
+      // from renderAIText above) via TreeWalker rather than re-flattening
+      // the message to a string, so a spot name inside a bullet or bold
+      // span still gets linkified without losing that structure.
+      async function upgradeBubbleWithSpotLinks(bubbleEl) {
         const rows = await getSpotsRows();
-        if (!rows.length) return null;
+        if (!rows.length) return;
+        const textEl = bubbleEl.querySelector('.ai-msg-text');
+        if (!textEl) return;
         // Longest name first, so a name that's a substring of a longer one
         // doesn't get matched short.
         const byLength = [...rows].sort((a, b) => (b.name || '').length - (a.name || '').length).filter((r) => r.name);
         const pattern = byLength.map((r) => r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-        if (!pattern) return null;
-        const parts = text.split(new RegExp(`(${pattern})`, 'gi'));
-        if (parts.length === 1) return null;
+        if (!pattern) return;
+        const re = new RegExp(`(${pattern})`, 'gi');
         const byNameLower = new Map(rows.map((r) => [r.name.toLowerCase(), r]));
-        const frag = document.createDocumentFragment();
-        for (const part of parts) {
-          const row = part && byNameLower.get(part.toLowerCase());
-          if (row) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'ai-spot-link';
-            btn.textContent = part;
-            btn.onclick = () => openSpotFromAI(row);
-            frag.append(btn);
-          } else if (part) {
-            frag.append(document.createTextNode(part));
-          }
-        }
-        return frag;
-      }
 
-      async function upgradeBubbleWithSpotLinks(bubbleEl, text) {
-        const frag = await linkifySpotNames(text);
-        if (!frag) return;
-        const textEl = bubbleEl.querySelector('.ai-msg-text');
-        if (!textEl) return;
-        textEl.textContent = '';
-        textEl.append(frag);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
+        let node;
+        while ((node = walker.nextNode())) textNodes.push(node);
+
+        let changed = false;
+        for (const textNode of textNodes) {
+          const value = textNode.nodeValue;
+          re.lastIndex = 0;
+          if (!re.test(value)) continue;
+          const parts = value.split(re);
+          if (parts.length === 1) continue;
+          const frag = document.createDocumentFragment();
+          for (const part of parts) {
+            const row = part && byNameLower.get(part.toLowerCase());
+            if (row) {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'ai-spot-link';
+              btn.textContent = part;
+              btn.onclick = () => openSpotFromAI(row);
+              frag.append(btn);
+            } else if (part) {
+              frag.append(document.createTextNode(part));
+            }
+          }
+          textNode.replaceWith(frag);
+          changed = true;
+        }
+        if (changed) messagesEl.scrollTop = messagesEl.scrollHeight;
       }
 
       function openSpotFromAI(row) {
@@ -4156,7 +4222,7 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           typing.remove();
           const replyEl = addBubble('assistant', reply || '(empty response)');
           history.push({ role: 'assistant', content: reply });
-          if (reply) upgradeBubbleWithSpotLinks(replyEl, reply); // async — bubble renders instantly, links pop in a beat later
+          if (reply) upgradeBubbleWithSpotLinks(replyEl); // async — bubble renders instantly, links pop in a beat later
         } catch (err) {
           typing.remove();
           // "Failed to fetch" is the browser's generic label for "no
