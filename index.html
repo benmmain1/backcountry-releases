@@ -2933,11 +2933,48 @@
         if (routeToFn) routeToFn(coords, entry.label);
       }
 
+      // Desktop right-click fires MapLibre's own 'contextmenu' map event
+      // reliably. Touch is a different story: MapLibre GL JS has no
+      // built-in long-press gesture — its own touch handlers capture
+      // touchstart for pan/zoom, which in practice means the browser's
+      // native long-press-to-contextmenu behavior never fires on a map
+      // canvas. Detected the hard way (this shipped relying on
+      // 'contextmenu' alone and simply did nothing on a phone). Touch
+      // gets its own manual hold-timer instead: press and hold without
+      // moving more than a few pixels for LONG_PRESS_MS drops the pin.
       function setupPinDrop() {
         map.on('contextmenu', (e) => {
           e.originalEvent?.preventDefault?.();
           handlePinDrop(e.lngLat);
         });
+
+        const LONG_PRESS_MS = 550;
+        const MOVE_CANCEL_PX = 10;
+        const container = map.getContainer();
+        let pressTimer = null;
+        let pressStart = null;
+        function clearPress() {
+          if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+          pressStart = null;
+        }
+        container.addEventListener('touchstart', (e) => {
+          if (e.touches.length !== 1) { clearPress(); return; }
+          const touch = e.touches[0];
+          pressStart = { x: touch.clientX, y: touch.clientY };
+          pressTimer = setTimeout(() => {
+            const rect = container.getBoundingClientRect();
+            const lngLat = map.unproject([pressStart.x - rect.left, pressStart.y - rect.top]);
+            clearPress();
+            handlePinDrop(lngLat);
+          }, LONG_PRESS_MS);
+        }, { passive: true });
+        container.addEventListener('touchmove', (e) => {
+          if (!pressStart || !e.touches.length) return;
+          const touch = e.touches[0];
+          if (Math.hypot(touch.clientX - pressStart.x, touch.clientY - pressStart.y) > MOVE_CANCEL_PX) clearPress();
+        }, { passive: true });
+        container.addEventListener('touchend', clearPress, { passive: true });
+        container.addEventListener('touchcancel', clearPress, { passive: true });
       }
       clearPendingPinFn = () => {
         if (pendingPinMarker) { pendingPinMarker.remove(); pendingPinMarker = null; }
