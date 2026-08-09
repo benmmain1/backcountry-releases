@@ -3286,6 +3286,10 @@
           photoUrl: props.photo_url || null,
         });
         appendFindSpotButton(body, feature.geometry.coordinates, props.name);
+        // Independent of Save — offline download shouldn't require adding
+        // this to the on-device saved list first, same as every other card
+        // type (trail/rec-site/scan-result/saved-spot) already offers it.
+        appendDownloadAreaButton(body, feature.geometry, props.name, SPOT_BUFFER_DEG);
       }, feature.geometry.coordinates, props.photo_url ? {
         url: props.photo_url,
         creditLabel: props.photo_credit_label,
