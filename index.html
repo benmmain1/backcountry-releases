@@ -1763,9 +1763,12 @@
           type: 'circle',
           source: 'camp-spots',
           paint: {
-            'circle-radius': 6,
-            'circle-color': '#f5c542',
-            'circle-stroke-width': 1.5,
+            // topPick is set on every feature (true for exactly one, false
+            // for the rest) so this case expression always sees a real
+            // boolean rather than undefined.
+            'circle-radius': ['case', ['get', 'topPick'], 9, 6],
+            'circle-color': ['case', ['get', 'topPick'], '#ffd23f', '#f5c542'],
+            'circle-stroke-width': ['case', ['get', 'topPick'], 2.5, 1.5],
             'circle-stroke-color': '#7a5b0a',
             'circle-pitch-alignment': 'viewport',
           },
@@ -1809,6 +1812,34 @@
         return elevationUnit === 'imperial' ? `${Math.round(meters * 3.28084).toLocaleString()} ft` : `${Math.round(meters).toLocaleString()} m`;
       }
 
+      // Plain-language rationale built only from numbers this scan pass
+      // actually computed (elevation, the openness ray-cast, the roughness
+      // sample, NLCD wooded/water) — no separate AI call, so it works
+      // without an AI Guide key configured and never says anything the
+      // terrain data doesn't back up.
+      function describeCampSpot(result) {
+        const elevFt = Math.round((absoluteElevation([result.lng, result.lat]) || 0) * 3.28084);
+        const openFt = Math.round(result.openness * 3.28084);
+        const viewText = result.openness >= 700
+          ? `sweeping, wide-open views (clear sightline out to about ${openFt.toLocaleString()} ft)`
+          : result.openness >= 300
+            ? `a solid, open view (clear sightline to about ${openFt.toLocaleString()} ft)`
+            : `a more sheltered, partly enclosed feel (clear sightline only to about ${openFt.toLocaleString()} ft)`;
+        const groundText = result.roughness <= 8
+          ? 'notably flat ground, easy to pitch a tent on'
+          : result.roughness <= 15
+            ? 'reasonably level ground'
+            : 'ground that clears the flatness check but still has some unevenness';
+        const extras = [
+          result.wooded ? 'tree cover for shade and a wind break' : null,
+          result.nearWater ? 'water nearby per land-cover data (not verified — confirm it\'s actually there before counting on it)' : null,
+        ].filter(Boolean);
+        let text = `At ${elevFt.toLocaleString()} ft, this spot has ${viewText} and ${groundText}`;
+        if (extras.length) text += `, plus ${extras.join(' and ')}`;
+        text += '. Computed from terrain shape and land-status data — not a verified site, so check current local rules before camping here.';
+        return text;
+      }
+
       // Shared by the star-button toggle and by "Find a camp spot near
       // here" (search results / AI handoff) — runs the real terrain scan
       // over whatever's currently in view and renders the results, without
@@ -1827,28 +1858,35 @@
 
           lastScanResults.clear();
           ensureCampSpotLayers();
-          map.getSource('camp-spots').setData({
-            type: 'FeatureCollection',
-            features: results.map((c, idx) => {
-              const scanId = `scan-${c.lng.toFixed(5)}-${c.lat.toFixed(5)}`;
-              lastScanResults.set(scanId, c);
-              const tags = [c.wooded ? 'wooded' : null, c.nearWater ? 'near water' : null].filter(Boolean).join(' · ');
-              return {
-                type: 'Feature',
-                properties: {
-                  scanId,
-                  label: `#${idx + 1} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${formatOpenness(c.openness)}${tags ? `\n${tags}` : ''}`,
-                },
-                geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
-              };
-            }),
+          // scanForCampSpots already sorts candidates best-score-first
+          // before the spacing pass, so index 0 here is the real top pick,
+          // not just the first one found.
+          const features = results.map((c, idx) => {
+            const scanId = `scan-${c.lng.toFixed(5)}-${c.lat.toFixed(5)}`;
+            lastScanResults.set(scanId, c);
+            const tags = [c.wooded ? 'wooded' : null, c.nearWater ? 'near water' : null].filter(Boolean).join(' · ');
+            return {
+              type: 'Feature',
+              properties: {
+                scanId,
+                topPick: idx === 0,
+                label: `${idx === 0 ? '★ Best pick' : `#${idx + 1}`} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${formatOpenness(c.openness)}${tags ? `\n${tags}` : ''}`,
+              },
+              geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
+            };
           });
+          map.getSource('camp-spots').setData({ type: 'FeatureCollection', features });
           setCampSpotsVisible(true);
           scanResultsShown = true;
           scanBtn.textContent = 'Clear Results';
           say(results.length
-            ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping. Tap a pin for details.`
+            ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping. Opening the best pick, tap any other pin for details.`
             : 'No candidates matched in this view — try loosening your Scan Preferences, pan over USFS/BLM land near a dispersed-camping route, or ask the AI Trail Guide (if set up) what to try next');
+          // Surface the top pick right away — a marker plus a plain-
+          // language reason it's ranked first, with the same Save button
+          // every scan candidate card already has — instead of making the
+          // user hunt for which of several dots is actually the best one.
+          if (features.length) showScanResultCard(features[0]);
 
           lastScanContextText = results.length
             ? 'scan_id|elevation_ft|open_view_ft|wooded(Y/N)|near_water(Y/N)|lat,lon\n' + results.map((c) => {
@@ -2315,9 +2353,13 @@
       function showScanResultCard(feature) {
         const props = feature.properties;
         const result = lastScanResults.get(props.scanId);
+        const isTopPick = !!props.topPick;
         setInfoIcon(SPOT_STYLE);
-        openInfoCard('Scanned Candidate', 'Camp Spot Candidate', (body) => {
-          body.append(paragraph('Computed from terrain shape and land-status data — not verified or permitted. Check current local rules before camping here.', 'info-desc'));
+        openInfoCard(isTopPick ? 'Best Pick From This Scan' : 'Scanned Candidate', isTopPick ? 'Best Camp Spot Nearby' : 'Camp Spot Candidate', (body) => {
+          body.append(paragraph(
+            result ? describeCampSpot(result) : 'Computed from terrain shape and land-status data — not verified or permitted. Check current local rules before camping here.',
+            'info-desc',
+          ));
           const badges = document.createElement('div');
           badges.className = 'info-badges';
           if (result) {
@@ -2330,7 +2372,7 @@
 
           appendSaveButton(body, {
             id: props.scanId,
-            label: 'Scanned Camp Spot',
+            label: isTopPick ? 'Best Pick Camp Spot' : 'Scanned Camp Spot',
             coordinates: feature.geometry.coordinates,
             source: 'scanned',
           });
