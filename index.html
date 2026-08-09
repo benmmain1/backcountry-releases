@@ -1761,6 +1761,7 @@
         const wantPanoramic = spotFilterState.view.has('panoramic');
         const wantOpenValley = spotFilterState.view.has('openValley');
         const wantTrailer = spotFilterState.camp.has('trailerOk');
+        const wantTent = spotFilterState.camp.has('tentOk');
         const needsNlcd = wantWater || wantWooded;
 
         const wildernessWasHidden = map.getLayoutProperty('wilderness', 'visibility') !== 'visible';
@@ -1784,9 +1785,10 @@
 
         // Pass 1: cheap, local, synchronous terrain checks only — no
         // network yet. A trailer/RV preference wants a much larger flat
-        // footprint than a tent does, so it gets a tighter roughness cap
-        // rather than a separate area measurement this scanner doesn't have.
-        const roughnessLimit = wantTrailer ? 12 : 25;
+        // footprint than a tent does, so it gets a tighter roughness cap;
+        // an explicit tent-friendly preference tightens it too, just not as
+        // far, since neither one has a separate area measurement to draw on.
+        const roughnessLimit = wantTrailer ? 12 : (wantTent ? 20 : 25);
         const terrainSurvivors = [];
         for (let idx = 0; idx < candidates.length; idx++) {
           if (idx % 3 === 0) await new Promise((r) => setTimeout(r, 0)); // finer rays cost more per candidate now — yield more often
