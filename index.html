@@ -3588,7 +3588,14 @@
         webSearchCostHint: 'Verified against Anthropic\'s docs: costs $10 per 1,000 searches on top of normal token usage, charged to your key.',
       },
       openai: { label: 'ChatGPT (OpenAI)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false, keyUrl: 'https://platform.openai.com/api-keys' },
-      google: { label: 'Gemini (Google)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
+      // Google fully shut down the Gemini 1.x line (404s on every request
+      // now) — gemini-3.6-flash/3.5-flash are the current stable, vision-
+      // capable models, and free-tier Gemini's ~250K TPM budget (vs.
+      // Groq's 8K TPM cap on its one free vision model) is the difference
+      // between a reference photo actually working and getting rate-
+      // limited by the spot-table context alone before the image is even
+      // counted.
+      google: { label: 'Gemini (Google)', defaultModel: 'gemini-3.6-flash', hint: 'e.g. gemini-3.6-flash, gemini-3.5-flash, gemini-2.5-flash — best free-tier option for reference photos, much higher token-per-minute limit than Groq', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
       groq: {
         label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use qwen/qwen3.6-27b if you want image upload to work (Groq retired its older llama-3.2-*-vision-preview models)', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys',
         webSearchCostHint: 'Switches to Groq\'s "compound" system (web search, code execution, more) for this account. Their docs don\'t publish exact pricing/rate limits for it separately from normal models — check console.groq.com/settings/billing after enabling if that matters to you.',
@@ -4115,7 +4122,7 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           const msg = err.message === 'Failed to fetch'
             ? 'Could not reach the AI service at all. If you picked "Other", double-check the Base URL in AI Guide Settings → Advanced. Otherwise this is likely a network block on this connection.'
             : looksLikeVisionRejection
-              ? `The model configured in AI Guide Settings ("${settings.model}") doesn't accept image input. Switch to a vision-capable model (e.g. gpt-4o/gpt-4o-mini, claude-sonnet-5, gemini-1.5-flash, or qwen/qwen3.6-27b on Groq) to use reference photos. Provider said: ${err.message}`
+              ? `The model configured in AI Guide Settings ("${settings.model}") doesn't accept image input. Switch to a vision-capable model (e.g. gpt-4o/gpt-4o-mini, claude-sonnet-5, gemini-3.6-flash, or qwen/qwen3.6-27b on Groq) to use reference photos. Provider said: ${err.message}`
               : err.message;
           const el = addBubble('error', `Something went wrong: ${msg}`);
           el.classList.add('error');
