@@ -1330,16 +1330,55 @@
       // terrain/imagery tiles in view at once, which is what crashed the
       // tab the first time this shipped. The risk is concentrated at wide
       // zoom, where even the *foreground* right under the camera already
-      // spans a huge area — so the ceiling stays low there, but ramps up
-      // to a true near-horizontal view once zoomed in close enough (a
-      // single alpine basin, say) that tilting all the way over doesn't
-      // multiply the tile footprint the same way.
+      // spans a huge area — so the ceiling stays low there, and ramps up
+      // toward a near-horizontal view only once zoomed in quite close.
+      //
+      // The original version of this curve (cap 80, reached by z~15)
+      // assumed that was "zoomed in close enough" for near-full tilt to be
+      // safe — a real field crash (webglcontextlost, tab still alive) came
+      // back at zoom 15.06 / pitch 73, squarely inside that old envelope.
+      // So that assumption was wrong: distant elevated terrain toward the
+      // horizon can still blow the tile/GPU-memory budget at a moderate
+      // zoom if the camera is tilted steeply enough to see far past the
+      // foreground. This curve is recalibrated directly against that data
+      // point — ceiling(15.06) now lands well under the 73 that crashed,
+      // not just barely under it — but it's still a hand-tuned number, not
+      // something verified against real GPU memory limits (this sandbox
+      // has no WebGL/terrain hardware to test against). See the
+      // webglcontextlost handler below for the actual safety net if this
+      // still isn't conservative enough on some device.
       function pitchCeilingForZoom() {
         const z = map.getZoom();
-        return Math.round(Math.min(80, Math.max(35, (z - 6) * 6.5 + 25)));
+        return Math.round(Math.min(65, Math.max(30, (z - 9) * 5 + 20)));
       }
       map.on('zoom', () => map.setMaxPitch(pitchCeilingForZoom()));
       map.setMaxPitch(pitchCeilingForZoom());
+
+      // Belt-and-suspenders for whatever the ceiling above still misses:
+      // MapLibre already calls preventDefault() on the native
+      // webglcontextlost event (enabling the browser to attempt automatic
+      // restoration) and re-fires both events on the map itself, but a
+      // real GPU-process crash (vs. a soft, recoverable context loss)
+      // often never restores at all — that's the "map went black, rest of
+      // the page is fine" failure mode, and without this it silently
+      // stays dead until the user thinks to reload. On loss: immediately
+      // drop out of 3D so that *if* it does restore, the same GPU pressure
+      // doesn't instantly retrigger; tell the user plainly either way.
+      let contextLostAt = null;
+      map.on('webglcontextlost', () => {
+        contextLostAt = Date.now();
+        if (terrainOn) setTerrainMode(false); else map.easeTo({ pitch: 0, duration: 0 });
+        say('The map hit a graphics memory limit in 3D view and had to reset. Reload the page if it looks blank.', 'error');
+        setTimeout(() => {
+          if (contextLostAt && Date.now() - contextLostAt >= 4000) {
+            say('The map did not recover on its own — please reload the page.', 'error');
+          }
+        }, 4500);
+      });
+      map.on('webglcontextrestored', () => {
+        contextLostAt = null;
+        say('Map recovered.', 'info');
+      });
 
       const TERRAIN_EXAGGERATION = 1.2;
 
