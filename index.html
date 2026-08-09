@@ -944,6 +944,38 @@
       return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`;
     }
 
+    // Peak/place names (fetchLandmarks, defined inside start() since it
+    // needs the map) get the same treatment as gem spots: cache every
+    // successful live lookup, and fall back to whatever's cached for a
+    // failed one instead of just going blank. Stored as one flat list
+    // rather than per-region, since dedup-by-name across overlapping
+    // lookups is simpler than tracking which region owns which name.
+    async function cacheLandmarksOffline(peaks, places) {
+      try {
+        const existing = (await idbGet(MISC_STORE, 'landmarks')) || [];
+        const seen = new Set(existing.map((p) => `${p.kind}|${p.name}`));
+        const additions = [
+          ...peaks.map((p) => ({ ...p, kind: 'peak' })),
+          ...places.map((p) => ({ ...p, kind: 'place' })),
+        ].filter((p) => !seen.has(`${p.kind}|${p.name}`));
+        if (additions.length) await idbPut(MISC_STORE, 'landmarks', existing.concat(additions));
+      } catch (err) {
+        console.warn('Could not cache landmark names for offline use', err);
+      }
+    }
+    async function getOfflineLandmarksForBbox([w, s, e, n]) {
+      try {
+        const all = (await idbGet(MISC_STORE, 'landmarks')) || [];
+        const inBbox = (p) => p.lng >= w && p.lng <= e && p.lat >= s && p.lat <= n;
+        return {
+          peaks: all.filter((p) => p.kind === 'peak' && inBbox(p)),
+          places: all.filter((p) => p.kind === 'place' && inBbox(p)),
+        };
+      } catch {
+        return { peaks: [], places: [] };
+      }
+    }
+
     // Standard slippy-map tile math (Web Mercator).
     function lonLatToTileXY(lon, lat, z) {
       const n = 2 ** z;
@@ -1044,6 +1076,15 @@
         done++;
         if (onProgress) onProgress(done, jobs.length, bytes);
       });
+
+      // Pre-fetch peak/place names for the whole downloaded area, not
+      // just whatever the user happened to pan across live — see
+      // fetchLandmarksFn above. Best-effort: Wikidata being slow/down
+      // shouldn't fail an otherwise-successful map download, and the
+      // live pan-triggered lookup still caches opportunistically anyway.
+      if (fetchLandmarksFn) {
+        try { await fetchLandmarksFn(bbox); } catch (err) { console.warn('Landmark pre-fetch failed', err); }
+      }
 
       const record = {
         name,
@@ -1359,15 +1400,19 @@
           fetchWikidataPoints(bbox, '?place wdt:P31 wd:Q8502.', controller.signal),
           fetchWikidataPoints(bbox, '?place wdt:P31/wdt:P279* wd:Q486972.', controller.signal),
         ])
-          .then(([peaks, places]) => ({ peaks, places }))
-          .catch((err) => {
-            console.warn('Wikidata landmark lookup failed', err);
-            return { peaks: [], places: [] };
+          .then(([peaks, places]) => {
+            cacheLandmarksOffline(peaks, places); // fire-and-forget
+            return { peaks, places };
+          })
+          .catch(async (err) => {
+            console.warn('Wikidata landmark lookup failed, trying offline cache', err);
+            return await getOfflineLandmarksForBbox(bbox);
           })
           .finally(() => clearTimeout(timeout));
         landmarkCache.set(key, result);
         return result;
       }
+      fetchLandmarksFn = fetchLandmarks; // exposes it to downloadRegionForOffline, defined at top level
 
       function setLandmarksVisible(visible) {
         for (const id of ['landmark-peak-dot', 'landmark-peak-label', 'landmark-place-label']) {
@@ -2804,6 +2849,7 @@
     let gemSpotsRef = null; // { layerId, loaded } from addGemSpotsLayer
     let findCampSpotNearFn = null; // set inside start() once the map/scanner exist; used by card buttons defined at top level
     let downloadAreaAroundFn = null; // same pattern, for the "Download this area" button below
+    let fetchLandmarksFn = null; // same pattern, lets downloadRegionForOffline pre-fetch peak/place names
     let lastScanContextTextRef = ''; // mirrors runCampScan's lastScanContextText — initAIGuide() lives outside start(), so it reads this instead
 
     // Reuses aiBtn's own click handler (wired up in initAIGuide) rather
@@ -3082,7 +3128,7 @@
       wrap.append(heading);
       const note = document.createElement('p');
       note.className = 'group-note';
-      note.textContent = 'Download the area you\'re exploring and it keeps working with no signal there — including live location tracking, once it has a fix. Trail and spot cards have their own "Download this area" button too, for just that one place instead of your whole current view.';
+      note.textContent = 'Download the area you\'re exploring and it keeps working with no signal there — map data, peak/place names, and live location tracking once it has a fix. Trail and spot cards have their own "Download this area" button too, for just that one place instead of your whole current view.';
       wrap.append(note);
 
       const downloadRow = document.createElement('div');
