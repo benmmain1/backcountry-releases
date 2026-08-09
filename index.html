@@ -5428,13 +5428,65 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
     // right after this reply targets the actual recommended spot.
     const SPOT_REF_PATTERN = /\(ref:\s*spot:([^)]+)\)/i;
     const SPOT_REF_CITATION_PATTERN = /\s*\(ref:\s*spot:[^)]+\)/i;
+
+    // Shared longest-name-first matcher for curated SPOT TABLE names
+    // inside an assistant reply's plain text. Longest first so a name
+    // that's a substring of a longer one (e.g. "Amethyst Lake" inside
+    // "Amethyst Basin / Amethyst Lake") can't match short and get treated
+    // as a second, different spot. Used both to linkify every mention
+    // (upgradeBubbleWithSpotLinks, which does its own DOM-node splitting)
+    // and, as a plain-string pass, by highlightSpotRefInReply's fallback
+    // below — kept in one place so "what counts as the same spot" can't
+    // drift between the two.
+    function buildSpotNameMatcher(rows) {
+      const byLength = [...rows].filter((r) => r.name).sort((a, b) => b.name.length - a.name.length);
+      const pattern = byLength.map((r) => r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+      if (!pattern) return null;
+      return { re: new RegExp(`(${pattern})`, 'gi'), byNameLower: new Map(rows.map((r) => [r.name.toLowerCase(), r])) };
+    }
+    // Distinct curated-row names found in a plain string, using the
+    // matcher above (global regex, so a longer match's span is consumed
+    // before scanning resumes — a shorter name entirely inside it is
+    // never separately matched).
+    function matchedCuratedSpotNames(text, matcher) {
+      if (!matcher) return [];
+      const { re, byNameLower } = matcher;
+      re.lastIndex = 0;
+      const names = new Set();
+      let m;
+      while ((m = re.exec(text))) {
+        const row = byNameLower.get(m[1].toLowerCase());
+        if (row) names.add(row.name);
+      }
+      return [...names];
+    }
+
     async function highlightSpotRefInReply(text) {
-      const match = SPOT_REF_PATTERN.exec(text);
-      if (!match) return;
-      const citedName = match[1].trim().toLowerCase();
       const rows = await getSpotsRows();
-      const row = rows.find((r) => (r.name || '').trim().toLowerCase() === citedName);
-      if (row && mapRef) mapRef.flyTo({ center: [row.lon, row.lat], zoom: Math.max(mapRef.getZoom(), 13), duration: 900 });
+      let row = null;
+      const match = SPOT_REF_PATTERN.exec(text);
+      if (match) {
+        const citedName = match[1].trim().toLowerCase();
+        row = rows.find((r) => (r.name || '').trim().toLowerCase() === citedName);
+      }
+      // The model doesn't reliably include the "(ref: spot:...)" citation
+      // even when it plainly gave exact coordinates for exactly one
+      // curated spot (observed in practice: it'll answer straight from
+      // the table but drop the citation), leaving the map exactly where
+      // it was — the whole point of this function. Fall back to the same
+      // name-matching upgradeBubbleWithSpotLinks already does reliably
+      // for linkifying: if exactly one distinct curated spot is named
+      // anywhere in the reply, treat that as the answer and fly there
+      // too. Two or more distinct names (a comparison) stays ambiguous
+      // and is left untouched, same as before.
+      if (!row) {
+        const names = matchedCuratedSpotNames(text, buildSpotNameMatcher(rows));
+        if (names.length === 1) row = rows.find((r) => r.name === names[0]);
+      }
+      if (row && mapRef) {
+        say(`Centering the map on ${row.name}…`);
+        mapRef.flyTo({ center: [row.lon, row.lat], zoom: Math.max(mapRef.getZoom(), 13), duration: 900 });
+      }
     }
 
     function initAIGuide() {
@@ -5648,13 +5700,9 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
         if (!rows.length) return;
         const textEl = bubbleEl.querySelector('.ai-msg-text');
         if (!textEl) return;
-        // Longest name first, so a name that's a substring of a longer one
-        // doesn't get matched short.
-        const byLength = [...rows].sort((a, b) => (b.name || '').length - (a.name || '').length).filter((r) => r.name);
-        const pattern = byLength.map((r) => r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-        if (!pattern) return;
-        const re = new RegExp(`(${pattern})`, 'gi');
-        const byNameLower = new Map(rows.map((r) => [r.name.toLowerCase(), r]));
+        const matcher = buildSpotNameMatcher(rows);
+        if (!matcher) return;
+        const { re, byNameLower } = matcher;
 
         const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
         const textNodes = [];
