@@ -15,6 +15,9 @@ on:
       - "index.html"
       - "style.json"
       - "*.pmtiles"
+      - "manifest.webmanifest"
+      - "sw.js"
+      - "*.png"
       - ".github/workflows/deploy-r2.yml"
   workflow_dispatch: {}
 
@@ -45,6 +48,31 @@ jobs:
             --endpoint-url "${R2_ENDPOINT}" \
             --content-type "application/json" \
             --cache-control "public, max-age=60"
+
+          # PWA installability: manifest + icons (stable content, cached
+          # longer) and the service worker itself (short/no-cache so an
+          # update actually reaches installed clients in reasonable time —
+          # a long-cached sw.js is a classic way to trap users on stale code).
+          if [ -f manifest.webmanifest ]; then
+            aws s3 cp manifest.webmanifest "s3://${R2_BUCKET}/manifest.webmanifest" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "application/manifest+json" \
+              --cache-control "public, max-age=3600"
+          fi
+          if [ -f sw.js ]; then
+            aws s3 cp sw.js "s3://${R2_BUCKET}/sw.js" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "application/javascript; charset=utf-8" \
+              --cache-control "no-cache"
+          fi
+          shopt -s nullglob
+          for f in *.png; do
+            echo "uploading $f"
+            aws s3 cp "$f" "s3://${R2_BUCKET}/$f" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "image/png" \
+              --cache-control "public, max-age=86400"
+          done
 
           # Small derived-data archives (e.g. a pilot-area spots.pmtiles) that
           # style.json references under ut/<name> alongside the main

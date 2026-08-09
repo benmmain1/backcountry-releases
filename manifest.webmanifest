@@ -1,0 +1,16 @@
+{
+  "name": "Backcountry",
+  "short_name": "Backcountry",
+  "description": "Offline camp & trail maps for public land — land ownership, trails, roads, closures, terrain, and an AI trail guide.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#16181a",
+  "theme_color": "#16181a",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

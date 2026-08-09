@@ -19,6 +19,18 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 <title>Backcountry</title>
+
+<!-- PWA installability: manifest + icons + iOS-specific meta (Safari
+     ignores the manifest for some of these, hence the duplication). -->
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#16181a" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Backcountry" />
+
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
 <style>
   :root {
@@ -3524,6 +3536,18 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
     initAIGuide();
 
     start().catch((error) => say(`Failed to load: ${error.message}`, 'error'));
+  </script>
+
+  <!-- Kept isolated from the main script above: registering the service
+       worker doesn't need anything the app defines, and failing quietly
+       here (unsupported browser, blocked registration) should never be
+       able to affect the map loading. -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker registration failed', err));
+      });
+    }
   </script>
 </body>
 </html>
