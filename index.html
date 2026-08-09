@@ -1918,13 +1918,26 @@
         // Pass 2: only the terrain survivors get the network-backed NLCD
         // check (water/tree cover), batched with limited concurrency —
         // same courtesy toward the free government service as the spot
-        // enrichment pass.
+        // enrichment pass. A wide/zoomed-out view can turn up hundreds of
+        // terrain survivors even though only MAX_RESULTS are ever kept —
+        // checking NLCD for every single one of them serially against a
+        // free, sometimes-slow government WMS is what actually caused
+        // multi-minute "Scanning terrain…" hangs in practice. Pre-sort by
+        // the same score used below and only NLCD-check a generous
+        // multiple of MAX_RESULTS worth of the best candidates — plenty
+        // of headroom for the spacing pass to still fill MAX_RESULTS
+        // slots, without a huge view meaning a huge number of network
+        // calls.
+        const NLCD_CHECK_CAP = MAX_RESULTS * 10;
         let nlcdSurvivors = terrainSurvivors;
         if (needsNlcd) {
+          const prioritized = [...terrainSurvivors]
+            .sort((a, b) => (b.openness - b.roughness * 15) - (a.openness - a.roughness * 15))
+            .slice(0, NLCD_CHECK_CAP);
           nlcdSurvivors = [];
           const CONCURRENCY = 6;
-          for (let i = 0; i < terrainSurvivors.length; i += CONCURRENCY) {
-            const batch = terrainSurvivors.slice(i, i + CONCURRENCY);
+          for (let i = 0; i < prioritized.length; i += CONCURRENCY) {
+            const batch = prioritized.slice(i, i + CONCURRENCY);
             const results = await Promise.all(batch.map(async (c) => {
               const [landCover, canopyPct] = await Promise.all([
                 queryNlcd(NLCD_LAND_COVER_LAYER, [c.lng, c.lat]),
@@ -2293,6 +2306,22 @@
 
         let found;
         if (args.area === 'named_place' && args.placeName) {
+          // A named place that's already a curated SPOT TABLE row AND
+          // Wilderness/backpack-only can never have scan results (see
+          // isInsideWilderness below) — the system prompt already tells
+          // the model not to call this tool for that case, but a model
+          // that calls it anyway would otherwise burn a real scan (which,
+          // for a wide/slow case, can take a while — see the NLCD cap
+          // above) only to land on the same zero-candidates message.
+          // Short-circuit deterministically instead of trusting prompt
+          // compliance alone: skip the scan and hand back that row's own
+          // coordinates right away.
+          const curatedRows = await getSpotsRows();
+          const curatedMatch = curatedRows.find((r) => (r.name || '').trim().toLowerCase() === args.placeName.trim().toLowerCase());
+          if (curatedMatch && (curatedMatch.wilderness || curatedMatch.access_type === 'backpack_short' || curatedMatch.access_type === 'backpack_long')) {
+            const conf = { precise: 'precise', approximate: 'approximate', 'rough-area-only': 'rough area only' }[curatedMatch.coordinate_confidence] || 'unknown precision';
+            return `"${curatedMatch.name}" is already in the SPOT TABLE and is Wilderness/backpack-only, so it was NOT scanned — the vehicle-route scanner can never find anything there. Answer directly from the table row instead: ${(+curatedMatch.lat).toFixed(5)},${(+curatedMatch.lon).toFixed(5)} (${conf}). If you have not already confirmed in this conversation that the user is fine hiking/backpacking in, ask that first instead of giving coordinates. Once confirmed, give the coordinates, state the precision honestly, and end with "(ref: spot:${curatedMatch.name})".`;
+          }
           let matches = [];
           try { matches = await geocodePlace(args.placeName); } catch { /* geocoder unreachable — treated as no match below */ }
           if (!matches.length) {
@@ -2602,10 +2631,18 @@
         const d = 0.0006; // GetFeatureInfo needs a small bbox around the point, not just a point
         const bbox = [lat - d, lng - d, lat + d, lng + d].join(',');
         const url = `${NLCD_WMS}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo&LAYERS=${encodeURIComponent(layer)}&QUERY_LAYERS=${encodeURIComponent(layer)}&CRS=EPSG:4326&BBOX=${bbox}&WIDTH=101&HEIGHT=101&I=50&J=50&INFO_FORMAT=application/json`;
-        const result = fetch(url)
+        // Plain fetch() has no built-in timeout, and this free government
+        // WMS is called once per terrain survivor per layer during a scan —
+        // a single slow/unresponsive request used to be able to stall the
+        // whole scan indefinitely (the "Scanning terrain…" hang), same class
+        // of bug geocodePlace already guards against.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const result = fetch(url, { signal: controller.signal })
           .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`NLCD ${res.status}`))))
           .then((data) => data.features?.[0]?.properties?.PALETTE_INDEX ?? null)
-          .catch((err) => { console.warn('NLCD lookup failed', err); return null; });
+          .catch((err) => { console.warn('NLCD lookup failed', err); return null; })
+          .finally(() => clearTimeout(timeout));
         nlcdCache.set(key, result);
         return result;
       }
