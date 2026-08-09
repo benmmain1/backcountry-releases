@@ -3633,14 +3633,23 @@
       custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Grok, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
     };
     const AI_SETTINGS_KEY = 'bc_ai_settings';
-    const AI_MAX_TOKENS = 1000;
+    const AI_MAX_TOKENS = 2048; // headroom for a full spot-matching answer that lists a few candidates, not just a one-liner
     const MAX_HISTORY_MESSAGES = 12; // ~6 exchanges kept; older ones drop off rather than growing every request forever
 
     const AI_SETTINGS_DEFAULT = { provider: 'anthropic', apiKey: '', model: AI_PROVIDERS.anthropic.defaultModel, baseUrl: '', webSearch: false };
+    // Models Google has fully shut down (404 on every request) since
+    // whoever saved these settings picked them — a stale localStorage
+    // value would otherwise keep overriding AI_PROVIDERS' current default
+    // forever, since that default only applies to a fresh/unsaved config.
+    const AI_DEAD_MODELS = {
+      google: new Set(['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.0-flash-001', 'gemini-2.0-flash-exp']),
+    };
     function loadAISettings() {
       try {
         const raw = localStorage.getItem(AI_SETTINGS_KEY);
-        return raw ? { ...AI_SETTINGS_DEFAULT, ...JSON.parse(raw) } : { ...AI_SETTINGS_DEFAULT };
+        const s = raw ? { ...AI_SETTINGS_DEFAULT, ...JSON.parse(raw) } : { ...AI_SETTINGS_DEFAULT };
+        if (AI_DEAD_MODELS[s.provider]?.has(s.model)) s.model = AI_PROVIDERS[s.provider].defaultModel;
+        return s;
       } catch {
         return { ...AI_SETTINGS_DEFAULT };
       }
@@ -3816,10 +3825,22 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           ? m.content.map((c) => c.type === 'image' ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } } : { text: c.text })
           : [{ text: m.content }],
       }));
+      // Gemini 2.5+/3.x models "think" by default, and those thinking
+      // tokens are drawn from the same maxOutputTokens budget as the
+      // visible answer (confirmed against reports of this exact symptom)
+      // — with a budget sized for a short chat reply, thinking alone can
+      // burn through it and leave the answer truncated or empty. This app
+      // doesn't need extended reasoning for a spot match, so minimize
+      // thinking rather than inflating the token budget to make room for
+      // it. Gemini 3.x renamed the control to thinkingLevel and rejects
+      // the old thinkingBudget field (and vice versa on 2.5), so pick the
+      // right one for the configured model instead of guessing wrong and
+      // erroring the whole request.
+      const thinkingConfig = /^gemini-3/i.test(settings.model) ? { thinkingLevel: 'minimal' } : { thinkingBudget: 0 };
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { maxOutputTokens: AI_MAX_TOKENS } }),
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { maxOutputTokens: AI_MAX_TOKENS, thinkingConfig } }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || 'Google request failed');
