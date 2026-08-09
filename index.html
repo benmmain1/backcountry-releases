@@ -3766,8 +3766,14 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           // code execution, more) — same endpoint/request shape as a
           // normal model, just a different model string, so swap it in
           // for this call only rather than overwriting the user's saved
-          // model choice.
-          const groqSettings = settings.webSearch ? { ...settings, model: 'groq/compound' } : settings;
+          // model choice. But compound doesn't accept image input, so a
+          // reference-photo turn has to skip the swap and go out on
+          // whatever vision-capable model the user actually configured —
+          // otherwise every image message silently loses web search's
+          // model override to compound and gets rejected no matter which
+          // model is saved in settings.
+          const hasImage = internalMessages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image'));
+          const groqSettings = (settings.webSearch && !hasImage) ? { ...settings, model: 'groq/compound' } : settings;
           return callOpenAICompatible(groqSettings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.groq.com/openai/v1/chat/completions');
         }
         case 'custom':
