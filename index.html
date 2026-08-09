@@ -1805,10 +1805,18 @@
         return { perDegLat, perDegLng };
       }
 
-      function isLegalCampLand(lngLat, px) {
+      // allowWilderness lets a backcountry (hike/backpack-in) scan pass
+      // Wilderness ground through instead of excluding it — dispersed
+      // *tent* camping is generally fine there, it's motorized/mechanized
+      // travel that Wilderness designation actually bans. A drive-in scan
+      // still excludes it (see nearDispersedRoute below: no vehicle route
+      // is ever mapped inside Wilderness anyway, so it'd never survive
+      // that filter regardless — this is belt-and-suspenders, not the
+      // only thing keeping vehicle camping out of Wilderness).
+      function isLegalCampLand(lngLat, px, allowWilderness) {
         const onUsfsOrBlm = map.queryRenderedFeatures(px, { layers: ['public-land-usfs', 'public-land-blm'] }).length > 0;
         if (!onUsfsOrBlm) return false;
-        if (map.queryRenderedFeatures(px, { layers: ['wilderness'] }).length > 0) return false;
+        if (!allowWilderness && map.queryRenderedFeatures(px, { layers: ['wilderness'] }).length > 0) return false;
         if (map.queryRenderedFeatures(px, { layers: ['closures'] }).length > 0) return false;
         return true;
       }
@@ -1868,8 +1876,14 @@
       }
 
       // Reads the Scan Preferences checkboxes to steer what counts as a
-      // good candidate — water/wooded/panoramic/etc.
-      async function scanForCampSpots() {
+      // good candidate — water/wooded/panoramic/etc. `backcountry` (only
+      // ever true via the AI Guide's run_camp_scan tool right now — there
+      // is no on-screen toggle for it) drops the "near a mapped vehicle
+      // route" requirement and allows Wilderness ground, for a user who's
+      // fine hiking/backpacking in: same real terrain analysis
+      // (openness/roughness/land-cover), just without the drive-in-only
+      // constraint.
+      async function scanForCampSpots(backcountry) {
         const bounds = map.getBounds();
         const w = bounds.getWest(), e = bounds.getEast(), s = bounds.getSouth(), n = bounds.getNorth();
         const wantWater = spotFilterState.view.has('waterView');
@@ -1889,8 +1903,8 @@
             const lat = s + (n - s) * (j / CAMP_GRID);
             const px = map.project([lng, lat]);
             if (px.x < 0 || px.y < 0 || px.x > map.getContainer().clientWidth || px.y > map.getContainer().clientHeight) continue;
-            if (!isLegalCampLand([lng, lat], px)) continue;
-            if (!nearDispersedRoute(px)) continue;
+            if (!isLegalCampLand([lng, lat], px, backcountry)) continue;
+            if (!backcountry && !nearDispersedRoute(px)) continue;
             candidates.push({ lng, lat });
           }
           if (i % 3 === 0) await new Promise((r) => setTimeout(r, 0)); // yield so the UI doesn't freeze
@@ -2075,17 +2089,18 @@
       // here" (search results / AI handoff) — runs the real terrain scan
       // over whatever's currently in view and renders the results, without
       // the scanBtn-specific show/hide-toggle behavior wrapped around it.
-      async function runCampScan() {
+      async function runCampScan(backcountry) {
         const token = ++scanRequestToken;
         lastScanErrored = false;
         scanBtn.classList.add('active');
         scanBtn.textContent = 'Scanning…';
         const activePrefs = [...spotFilterState.view, ...spotFilterState.camp];
+        const modeText = backcountry ? 'backcountry ground (hike/backpack-in, including Wilderness)' : 'camp-worthy ground';
         say(activePrefs.length
           ? `Scanning for a spot matching your Scan Preferences (${activePrefs.length}) — can take a few seconds…`
-          : 'Scanning this view for camp-worthy ground — a thorough pass, can take a few seconds…');
+          : `Scanning this view for ${modeText} — a thorough pass, can take a few seconds…`);
         try {
-          const results = await scanForCampSpots();
+          const results = await scanForCampSpots(backcountry);
           if (token !== scanRequestToken) return false; // user moved on before this finished
 
           lastScanResults.clear();
@@ -2199,14 +2214,14 @@
       // wait for that area's tiles/DEM to actually finish loading, then
       // run the same real scan the star button runs — "find me a camp
       // spot near this place" end to end.
-      async function findCampSpotNear([lng, lat], label) {
+      async function findCampSpotNear([lng, lat], label, backcountry) {
         closeSheets();
         if (!terrainOn) setTerrainMode(true);
         map.stop();
         map.flyTo({ center: [lng, lat], zoom: 13.6, duration: 900 });
         say(`Looking for camp spots near ${label || 'this location'}…`, 'warn');
         await new Promise((resolve) => map.once('idle', resolve));
-        let found = await runCampScan();
+        let found = await runCampScan(backcountry);
         // The scanner only samples the current viewport, which at 13.6 is
         // only a couple of square miles — real legal ground (on a mapped
         // dispersed-camping route, off wilderness/closures) isn't
@@ -2232,22 +2247,24 @@
           map.stop();
           map.flyTo({ center: [lng, lat], zoom: 12.6, duration: 700 });
           await new Promise((resolve) => map.once('idle', resolve));
-          found = await runCampScan();
+          found = await runCampScan(backcountry);
         }
         if (!found && !lastScanErrored) {
           // "Loosen Scan Preferences" / "may not have mapped routes
           // nearby" implies this is a search that just hasn't turned
           // something up yet — misleading and worth calling "lying" when
-          // the target is inside designated Wilderness, where motorized/
-          // mechanized travel (so any mapped vehicle-camping route) is
-          // legally impossible, not merely unmapped. This scanner only
-          // ever finds ground on such a route, so say plainly that no
-          // scan setting changes the outcome here, instead of implying
-          // one might.
-          if (isInsideWilderness([lng, lat])) {
+          // the target is inside designated Wilderness AND this was a
+          // drive-in search: motorized/mechanized travel (so any mapped
+          // vehicle-camping route) is legally impossible there, not
+          // merely unmapped, no scan setting changes that. A backcountry
+          // search legitimately finding zero candidates in Wilderness is
+          // a different, retryable case (this exact patch of ground
+          // just didn't have anything flat/open enough) so it gets the
+          // normal message instead.
+          if (!backcountry && isInsideWilderness([lng, lat])) {
             say(`${label || 'This spot'} is inside designated Wilderness — motor vehicles and mechanized travel aren't allowed there, so there's no dispersed vehicle-camping ground to find, here or anywhere else inside that Wilderness boundary. This scanner only finds spots on a mapped vehicle route; no amount of retrying or loosening Scan Preferences changes that. If you're backpacking in, dispersed tent camping is generally fine on durable, already-impacted ground 200+ ft from water and trails — ask the AI Trail Guide for specifics, or check with the ranger district.`, 'warn');
           } else {
-            say(`No legal, on-route dispersed-camping ground found within about 5 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
+            say(`No legal ${backcountry ? 'backcountry camping' : 'on-route dispersed-camping'} ground found within about 5 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have anything flat/open enough nearby`, 'warn');
           }
         }
         return found;
@@ -2302,41 +2319,42 @@
         setScanPref('view', 'panoramic', !!args.wantPanoramic);
         setScanPref('view', 'waterView', !!args.wantWater);
         setScanPref('view', 'wooded', !!args.wantWooded);
-        setScanPref('camp', 'trailerOk', !!args.wantTrailer);
+        // A trailer/RV can't be backpacked in — ignore that preference
+        // outright in backcountry mode regardless of what the model
+        // passed, rather than trusting it never combines the two.
+        setScanPref('camp', 'trailerOk', !args.wantBackcountry && !!args.wantTrailer);
+        let backcountry = !!args.wantBackcountry;
 
         let found;
         if (args.area === 'named_place' && args.placeName) {
-          // A named place that's already a curated SPOT TABLE row AND
-          // Wilderness/backpack-only can never have scan results (see
-          // isInsideWilderness below) — the system prompt already tells
-          // the model not to call this tool for that case, but a model
-          // that calls it anyway would otherwise burn a real scan (which,
-          // for a wide/slow case, can take a while — see the NLCD cap
-          // above) only to land on the same zero-candidates message.
-          // Short-circuit deterministically instead of trusting prompt
-          // compliance alone: skip the scan and hand back that row's own
-          // coordinates right away.
+          // A named place that's already a curated SPOT TABLE row and
+          // Wilderness/backpack-only can never turn up anything for a
+          // drive-in search (see isInsideWilderness below) — force
+          // backcountry mode for it regardless of what the model passed,
+          // so this always gets a real scan instead of the guaranteed-
+          // zero drive-in search the model might otherwise have asked
+          // for.
           const curatedRows = await getSpotsRows();
           const curatedMatch = curatedRows.find((r) => (r.name || '').trim().toLowerCase() === args.placeName.trim().toLowerCase());
           if (curatedMatch && (curatedMatch.wilderness || curatedMatch.access_type === 'backpack_short' || curatedMatch.access_type === 'backpack_long')) {
-            const conf = { precise: 'precise', approximate: 'approximate', 'rough-area-only': 'rough area only' }[curatedMatch.coordinate_confidence] || 'unknown precision';
-            return `"${curatedMatch.name}" is already in the SPOT TABLE and is Wilderness/backpack-only, so it was NOT scanned — the vehicle-route scanner can never find anything there. Answer directly from the table row instead: ${(+curatedMatch.lat).toFixed(5)},${(+curatedMatch.lon).toFixed(5)} (${conf}). If you have not already confirmed in this conversation that the user is fine hiking/backpacking in, ask that first instead of giving coordinates. Once confirmed, give the coordinates, state the precision honestly, and end with "(ref: spot:${curatedMatch.name})".`;
+            backcountry = true;
           }
           let matches = [];
           try { matches = await geocodePlace(args.placeName); } catch { /* geocoder unreachable — treated as no match below */ }
           if (!matches.length) {
             return `Could not find a place named "${args.placeName}" to scan near. Tell the user to try a different/more specific name, or ask to scan their current map view instead.`;
           }
-          found = await findCampSpotNear([matches[0].lng, matches[0].lat], matches[0].name);
+          found = await findCampSpotNear([matches[0].lng, matches[0].lat], matches[0].name, backcountry);
           // Same distinction as findCampSpotNear's own status message: a
           // Wilderness-designated target has categorically no dispersed
-          // vehicle-camping ground to find (motor vehicles/mechanized
-          // travel aren't legally allowed there at all), not just
-          // "nothing mapped yet" — telling the model to suggest loosening
-          // preferences or trying again for a Wilderness spot would have
-          // it repeat that misleading framing to the user.
-          if (!found && !lastScanErrored && isInsideWilderness([matches[0].lng, matches[0].lat])) {
-            return `"${matches[0].name}" is inside designated Wilderness — motor vehicles and mechanized travel aren't allowed there, so there is categorically no dispersed vehicle-camping ground to find, not merely "none mapped yet." Tell the user this plainly and do not suggest loosening Scan Preferences or trying again, since no scan setting changes a Wilderness boundary. If they're backpacking in, dispersed tent camping is generally fine on durable, already-impacted ground 200+ ft from water and trails — mention that as the actual option, and suggest checking the ranger district for specifics.`;
+          // *vehicle*-camping ground to find (motor vehicles/mechanized
+          // travel aren't legally allowed there at all) — but only for a
+          // drive-in search. A backcountry search finding zero candidates
+          // in Wilderness is a real, retryable "nothing flat/open enough
+          // here" result, not a categorical impossibility, so it falls
+          // through to the normal zero-candidates message below instead.
+          if (!backcountry && !found && !lastScanErrored && isInsideWilderness([matches[0].lng, matches[0].lat])) {
+            return `"${matches[0].name}" is inside designated Wilderness — motor vehicles and mechanized travel aren't allowed there, so there is categorically no dispersed vehicle-camping ground to find, not merely "none mapped yet." Tell the user this plainly and do not suggest loosening Scan Preferences or trying again, since no scan setting changes a Wilderness boundary. If they're backpacking in, dispersed tent camping is generally fine — ask if hiking/backpacking in is acceptable and, if so, call run_camp_scan again on this same place with wantBackcountry true for a real scan of the backcountry ground there.`;
           }
         } else {
           // Mirrors findCampSpotNear's own terrain-on handling — the star
@@ -2349,7 +2367,7 @@
             map.stop();
             await new Promise((resolve) => map.once('idle', resolve));
           }
-          found = await runCampScan();
+          found = await runCampScan(backcountry);
         }
 
         // Distinguish a real failure (lastScanErrored, set by
@@ -2361,7 +2379,9 @@
           return 'The scanner hit a technical error and did not complete (not the same as finding zero candidates). Tell the user the scan failed and to try again, rather than saying no spots were found.';
         }
         if (!found) {
-          return 'The scanner ran but found zero legal candidates matching those preferences in that area (no mapped dispersed-camping route nearby, or everything nearby is Wilderness/closed/too rough for the requested setup). Tell the user plainly and suggest a different area or loosening what they are looking for — do not invent a spot instead.';
+          return backcountry
+            ? 'The scanner ran in backcountry mode but found zero legal candidates matching those preferences in that area (everything nearby is either not USFS/BLM land, closed, or too rough/enclosed for the requested setup). Tell the user plainly and suggest a different area or loosening what they are looking for — do not invent a spot instead.'
+            : 'The scanner ran but found zero legal candidates matching those preferences in that area (no mapped dispersed-camping route nearby, or everything nearby is Wilderness/closed/too rough for the requested setup). Tell the user plainly and suggest a different area or loosening what they are looking for — do not invent a spot instead.';
         }
         return `Scan complete — real candidates below (recommend exactly one, citing its scan_id per the system prompt's citation rule):\n${lastScanContextText}`;
       }
@@ -4995,7 +5015,7 @@
     // time (see callAnthropic/callOpenAICompatible/callGoogle) instead of
     // duplicating the schema per provider.
     const RUN_CAMP_SCAN_TOOL_NAME = 'run_camp_scan';
-    const RUN_CAMP_SCAN_TOOL_DESCRIPTION = 'Run the real terrain and land-cover scanner to find dispersed-camping candidates matching given preferences. Only call this once you know what view the user wants and what they are camping with (or they have said they have no preference) — do not guess their answer. Returns real scanned candidates with a scan_id for each; never invent coordinates of your own.';
+    const RUN_CAMP_SCAN_TOOL_DESCRIPTION = 'Run the real terrain and land-cover scanner to find dispersed-camping candidates matching given preferences. Only call this once you know what view the user wants, what they are camping with, and whether they need to drive there or hiking/backpacking in is fine (or they have said they have no preference) — do not guess their answers. Returns real scanned candidates with a scan_id for each; never invent coordinates of your own.';
     const RUN_CAMP_SCAN_TOOL_PARAMETERS = {
       type: 'object',
       properties: {
@@ -5003,7 +5023,8 @@
         wantPanoramic: { type: 'boolean', description: 'User wants a sweeping, 360-degree/panoramic view.' },
         wantWater: { type: 'boolean', description: 'User wants to be near a lake or stream.' },
         wantWooded: { type: 'boolean', description: 'User wants tree cover, shade, or a wind break.' },
-        wantTrailer: { type: 'boolean', description: 'User is camping with a trailer/RV and needs a large flat pad.' },
+        wantTrailer: { type: 'boolean', description: 'User is camping with a trailer/RV and needs a large flat pad. Never combine with wantBackcountry — a trailer cannot be backpacked in.' },
+        wantBackcountry: { type: 'boolean', description: 'User is fine hiking/backpacking in — search real backcountry ground (including designated Wilderness) using the same terrain analysis, instead of requiring a mapped vehicle route. Set false/omit when the user wants somewhere they can drive to.' },
         area: { type: 'string', enum: ['current_view', 'named_place'], description: '"current_view" scans wherever the map is currently showing. "named_place" scans near a specific landmark/trailhead/peak not already in the SPOT TABLE.' },
         placeName: { type: 'string', description: 'Required when area is "named_place": the landmark/trailhead/peak name to search near.' },
       },
@@ -5143,9 +5164,10 @@ RULES:
     : 'you do NOT have web search access right now, so don\'t guess a nearby-but-different place as if it answers what they asked (e.g. don\'t substitute a well-known lake in a different canyon for an obscure landmark you don\'t actually know, and don\'t substitute a table row just because it shares a tag). If you don\'t have reliable knowledge of that specific place, say so plainly instead of guessing something adjacent — a wrong confident answer is worse than admitting the gap. (The user can turn on web search in AI Guide Settings for a small per-search cost if they want this looked up for real.)'
   }
 - Any suggestion that isn't an actually-connected table match — whether a memory-based guess or unconfirmed even after a search — must be prefixed "⚠️ Unverified lead (not in our database):" and must not invent specific-sounding details you don't actually have: no precise coordinates, and no fabricated turn-by-turn directions, mileage, road numbers, or "you'll see a pull-out near X" detail either — that level of specificity implies real knowledge you don't have and is worse than a vague pointer. Describe it at the level you actually know it (an area, drainage, or named trail) and tell the user to verify access/legality/conditions themselves.
-- If the user asks for "an exact spot," "exact coordinates," or "where exactly" for a place you already matched to a SPOT TABLE row — that is not the same as "find a new spot" below, and does NOT mean call run_camp_scan. run_camp_scan only finds ground on a mapped dispersed-camping vehicle route, and a Wilderness-area or backpack-only spot (wilderness=Y, or access_type backpack_short/backpack_long) structurally never has one, so scanning there will always come back with zero candidates — that's not a real answer, and after you just recommended the place it reads as a contradiction. If that row is Wilderness/backpack-only and the conversation hasn't already made clear the user is fine hiking/backpacking in (vs. wanting somewhere they can drive to), ask one short question first — e.g. "This one's backcountry access only, a hike/backpack in with no vehicle route — are you up for that, or would you rather I find somewhere you can drive to?" — rather than silently assuming either way. Once backpacking is confirmed (or was already obvious from context), answer straight from that row's own lat,lon: give the coordinates, say plainly how precise they are (coord_precision precise/approx/rough-area — e.g. "GPS here is only approximate, treat it as a starting area, not a pin"), and end that paragraph with "(ref: spot:<exact name as given in the table>)" so the app can center the map on it, same as the scan citation below. If they'd rather drive somewhere, look for a drive_in_easy/drive_in_high_clearance match instead (SPOT TABLE or run_camp_scan on a nearby drivable area) rather than pushing the Wilderness spot on them. Only reach for run_camp_scan on a curated match when the user actually wants nearby vehicle-accessible dispersed ground around a drive-in spot — not the exact backpack-in location itself.
-- If asked to "find a new spot," "something unique," or a spot that doesn't match anything already in the SPOT TABLE: check SCANNED CANDIDATES first (if present below) — if it already has candidates that actually fit what the user described, use those without re-scanning. Before doing anything else, make sure you know (a) what kind of view they want (open valley, panoramic/360, near water, wooded/sheltered, or no preference), (b) what they're camping with (tent, hammock, or trailer/RV), and (c) whether they need to drive to it or hiking/backpacking in is fine — ask one short, natural question covering whichever of these isn't already clear from the conversation, unless they've already told you all three in one message. run_camp_scan only ever finds ground on a mapped vehicle route, so: if they need to drive (or didn't say and a car-camping default is reasonable), call run_camp_scan with your best mapping of their view/camp answers onto its fields, using area "current_view" unless they named a specific landmark/trailhead/peak that isn't already in the SPOT TABLE (then "named_place" with that name as placeName) — don't call it more than once per turn unless the first call's area genuinely failed to resolve. If backpacking/hiking in is fine, don't call run_camp_scan at all — instead look in the SPOT TABLE for a backpack_short/backpack_long match fitting their view/camp answers; if nothing fits, say plainly that the live scanner only covers drive-accessible ground and describe what you actually know about backpack-in options at the area/drainage level (per the unverified-lead rule above), rather than running the vehicle scanner and reporting a misleading "nothing found."
-- Once you have real candidates (from run_camp_scan's result or SCANNED CANDIDATES below), recommend exactly ONE whose elevation/openness/wooded/water columns actually fit what the user described, using the evaluation criteria above, and describe it the way RULES above already say to (plain sentences, real numbers, no column names). End that paragraph with its citation in parentheses exactly as given, e.g. "(ref: scan-111.23456-40.56789)" — the app uses this to point the map at that exact pin, so never paraphrase, omit, or alter it. Be upfront it's computed from terrain shape and land-status only — unverified, not a permitted campsite, not checked for legality beyond the scanner's own USFS/BLM-and-not-Wilderness-or-closure filter. If zero candidates come back, say so plainly and suggest a different area or loosening what they're looking for — never fabricate a spot instead of an honest "nothing found."
+- run_camp_scan has a wantBackcountry field: false/omitted searches only ground on a mapped dispersed-camping vehicle route (drive-in), true searches real backcountry ground including designated Wilderness (hike/backpack-in) using the exact same terrain analysis (openness, roughness, land cover) — just without the vehicle-route requirement. Always know which one you need before calling it; never guess. Never set wantTrailer together with wantBackcountry — a trailer cannot be backpacked in.
+- If the user asks for "an exact spot," "exact coordinates," or "where exactly" for a place you already matched to a SPOT TABLE row: if that row is Wilderness/backpack-only (wilderness=Y, or access_type backpack_short/backpack_long) and the conversation hasn't already made clear the user is fine hiking/backpacking in (vs. wanting somewhere they can drive to), ask one short question first — e.g. "This one's backcountry access only, a hike/backpack in with no vehicle route — are you up for that, or would you rather I find somewhere you can drive to?" — rather than silently assuming either way. Once backpacking is confirmed (or was already obvious from context), call run_camp_scan with area "named_place", that row's exact name as placeName, and wantBackcountry true — this runs a real terrain scan restricted to that named place and returns actual analyzed candidates with a scan_id, which is a better answer than just reciting the table row's own rough coordinate, since it comes with a real, terrain-grounded reason (elevation, openness, roughness, wooded/water) instead of just "here's the basin." Only fall back to the table row's own lat,lon (with an honest coord_precision caveat, cited "(ref: spot:<exact name as given in the table>)") if that scan comes back with zero candidates. If the user would rather drive somewhere, look for a drive_in_easy/drive_in_high_clearance match instead (SPOT TABLE, or run_camp_scan with wantBackcountry false/omitted on a nearby drivable area) rather than pushing the Wilderness spot on them.
+- If asked to "find a new spot," "something unique," or a spot that doesn't match anything already in the SPOT TABLE: check SCANNED CANDIDATES first (if present below) — if it already has candidates that actually fit what the user described, use those without re-scanning. Before doing anything else, make sure you know (a) what kind of view they want (open valley, panoramic/360, near water, wooded/sheltered, or no preference), (b) what they're camping with (tent, hammock, or trailer/RV), and (c) whether they need to drive to it or hiking/backpacking in is fine — ask one short, natural question covering whichever of these isn't already clear from the conversation, unless they've already told you all three in one message. Once you know enough, call run_camp_scan with your best mapping of their view/camp answers onto its fields plus wantBackcountry set true if hiking/backpacking in is fine, false/omitted if they need to drive (or didn't say and a car-camping default is reasonable). Use area "current_view" unless they named a specific landmark/trailhead/peak that isn't already in the SPOT TABLE (then "named_place" with that name as placeName). Don't call it more than once per turn unless the first call's area genuinely failed to resolve.
+- Once you have real candidates (from run_camp_scan's result or SCANNED CANDIDATES below), recommend exactly ONE whose elevation/openness/wooded/water columns actually fit what the user described, using the evaluation criteria above, and describe it the way RULES above already say to (plain sentences, real numbers, no column names) — this is also your chance to actually explain WHY it's a good spot (the real elevation, how open/sheltered it is, ground condition, wooded/water), not just state that it exists. End that paragraph with its citation in parentheses exactly as given, e.g. "(ref: scan-111.23456-40.56789)" — the app uses this to point the map at that exact pin, so never paraphrase, omit, or alter it. Be upfront it's computed from terrain shape and land-status only — unverified, not a permitted campsite, not checked for legality beyond the scanner's own USFS/BLM filter (plus, for a drive-in search, being on a mapped vehicle route; a backcountry search includes Wilderness ground but still excludes closures). If zero candidates come back, say so plainly and suggest a different area or loosening what they're looking for — never fabricate a spot instead of an honest "nothing found."
 - Never invent a brand-new latitude/longitude of your own. Every coordinate you give the user must come from either the SPOT TABLE, SCANNED CANDIDATES rows below, or a run_camp_scan result — for anything else, describe the area/drainage/trail by name only (per the unverified-lead rule above) and let the user tap "Find a camp spot near here," the scan button, or ask you to scan, rather than fabricating one yourself.
 - Be concise; use a short list when comparing spots.
 - Remind users conditions (fire restrictions, closures, seasonal access) change — check with the land manager before heading out.
