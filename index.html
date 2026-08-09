@@ -2024,7 +2024,7 @@
           const features = results.map((c, idx) => {
             const scanId = `scan-${c.lng.toFixed(5)}-${c.lat.toFixed(5)}`;
             const isTop = idx === 0;
-            lastScanResults.set(scanId, { ...c, topPick: isTop });
+            lastScanResults.set(scanId, { ...c, topPick: isTop, rank: idx + 1 });
             const tags = [c.wooded ? 'wooded' : null, c.nearWater ? 'near water' : null].filter(Boolean).join(' · ');
             return {
               type: 'Feature',
@@ -2062,6 +2062,44 @@
           return false;
         }
       }
+
+      // Re-marks whichever scanned pin the AI Guide actually recommended
+      // as the visually-emphasized one (gold ★, same styling runCampScan
+      // already gives its own deterministic top pick), even when that's
+      // not the highest-scored candidate — the AI may have weighed the
+      // user's specific ask differently than the flat openness/roughness
+      // formula does. Rebuilds the same FeatureCollection shape
+      // runCampScan builds, from lastScanResults (already has every
+      // candidate from the scan the tool call just ran), so this never
+      // needs its own separate scoring or fetch. Returns false (does
+      // nothing) if the id isn't one from the most recent scan, e.g. a
+      // model hallucinating a scan_id it never actually received.
+      function highlightScanId(scanId) {
+        const chosen = lastScanResults.get(scanId);
+        if (!chosen || !map.getSource('camp-spots')) return false;
+        const features = [...lastScanResults.entries()].map(([id, c]) => {
+          const isChosen = id === scanId;
+          const tags = [c.wooded ? 'wooded' : null, c.nearWater ? 'near water' : null].filter(Boolean).join(' · ');
+          const rankLabel = isChosen ? '★ AI pick' : c.topPick ? '★ Best pick' : `#${c.rank}`;
+          return {
+            type: 'Feature',
+            properties: {
+              scanId: id,
+              topPick: isChosen,
+              label: `${rankLabel} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${formatOpenness(c.openness)}${tags ? `\n${tags}` : ''}`,
+            },
+            geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
+          };
+        });
+        map.getSource('camp-spots').setData({ type: 'FeatureCollection', features });
+        setCampSpotsVisible(true);
+        scanResultsShown = true;
+        scanBtn.classList.add('active');
+        scanBtn.textContent = 'Clear Results';
+        map.flyTo({ center: [chosen.lng, chosen.lat], zoom: Math.max(map.getZoom(), 14), duration: 900 });
+        return true;
+      }
+      highlightScanIdFn = highlightScanId; // exposes it to initAIGuide(), same bridge pattern as findCampSpotNearFn above
 
       scanBtn.onclick = async () => {
         if (!terrainOn) {
@@ -2111,8 +2149,58 @@
         if (!found) {
           say(`No legal, on-route dispersed-camping ground found within about 15 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
         }
+        return found;
       }
       findCampSpotNearFn = findCampSpotNear; // exposes it to the card-builder functions defined at top level
+
+      // Executes the AI Guide's run_camp_scan tool call. Deliberately does
+      // NOT reimplement any scanning logic of its own — it sets the same
+      // Scan Preferences a human tapping the switches would (via
+      // setScanPref, so the panel visibly reflects what the AI understood),
+      // then runs the exact same runCampScan()/findCampSpotNear() the star
+      // button and "Find a camp spot near here" already use. That keeps
+      // the AI's results held to the same real terrain/land-status
+      // filtering as every other path — never a shortcut that could find
+      // something the deterministic scanner itself wouldn't. Returns a
+      // plain-text tool result for the model: either the same scan_id
+      // table format already used for SCANNED CANDIDATES, or a short
+      // explanation of why nothing came back, so the model can relay that
+      // honestly instead of guessing.
+      async function executeAiScanTool(args) {
+        setScanPref('view', 'openValley', !!args.wantOpenValley);
+        setScanPref('view', 'panoramic', !!args.wantPanoramic);
+        setScanPref('view', 'waterView', !!args.wantWater);
+        setScanPref('view', 'wooded', !!args.wantWooded);
+        setScanPref('camp', 'trailerOk', !!args.wantTrailer);
+
+        let found;
+        if (args.area === 'named_place' && args.placeName) {
+          let matches = [];
+          try { matches = await geocodePlace(args.placeName); } catch { /* geocoder unreachable — treated as no match below */ }
+          if (!matches.length) {
+            return `Could not find a place named "${args.placeName}" to scan near. Tell the user to try a different/more specific name, or ask to scan their current map view instead.`;
+          }
+          found = await findCampSpotNear([matches[0].lng, matches[0].lat], matches[0].name);
+        } else {
+          // Mirrors findCampSpotNear's own terrain-on handling — the star
+          // button instead just refuses and asks the human to flip the
+          // switch, but there's no human to ask mid-chat, so turn it on
+          // and give the DEM tiles a moment to actually load before
+          // reading elevation off them.
+          if (!terrainOn) {
+            setTerrainMode(true);
+            map.stop();
+            await new Promise((resolve) => map.once('idle', resolve));
+          }
+          found = await runCampScan();
+        }
+
+        if (!found) {
+          return 'The scanner ran but found zero legal candidates matching those preferences in that area (no mapped dispersed-camping route nearby, or everything nearby is Wilderness/closed/too rough for the requested setup). Tell the user plainly and suggest a different area or loosening what they are looking for — do not invent a spot instead.';
+        }
+        return `Scan complete — real candidates below (recommend exactly one, citing its scan_id per the system prompt's citation rule):\n${lastScanContextText}`;
+      }
+      executeAiScanToolFn = executeAiScanTool; // exposes it to initAIGuide(), same bridge pattern as findCampSpotNearFn above
 
       // Same bridge pattern as findCampSpotNearFn above — lets the
       // "Download this area" button on trail/spot cards (built at top
@@ -2153,6 +2241,51 @@
       //    USFS/BLM data the map itself renders, but only for the area
       //    already panned/zoomed into, since there's no statewide index
       //    of that tileset available client-side.
+      // Shared by initSearch (below) and the AI Guide's run_camp_scan tool
+      // executor (see executeAiScanToolFn) — a named-place lookup ("near
+      // Mirror Lake") both need, so it lives here once instead of two
+      // divergent copies. Free/keyless/CORS-verified the same way the
+      // peak-label feature's Wikidata lookup already was (see
+      // fetchWikidataPoints above): wbsearchentities to find candidates,
+      // then a batched wbgetentities lookup for real coordinates, kept
+      // only if they fall inside this region's actual bbox (the fast path
+      // to filtering out Utah's "Kings Peak" from same-named peaks/places
+      // elsewhere, without a slower/more complex SPARQL text+geo query).
+      const PEAK_QID = 'Q8502'; // mountain — same constant the peak-label feature already queries by
+      async function geocodePlace(query) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        try {
+          const searchUrl = `https://www.wikidata.org/w/api.php?${new URLSearchParams({
+            action: 'wbsearchentities', search: query, language: 'en', format: 'json', origin: '*', limit: '12',
+          })}`;
+          const searchData = await fetch(searchUrl, { signal: controller.signal }).then((r) => r.json());
+          const candidates = searchData.search || [];
+          if (!candidates.length) return [];
+          const getUrl = `https://www.wikidata.org/w/api.php?${new URLSearchParams({
+            action: 'wbgetentities', ids: candidates.map((c) => c.id).join('|'), props: 'claims', format: 'json', origin: '*',
+          })}`;
+          const getData = await fetch(getUrl, { signal: controller.signal }).then((r) => r.json());
+          const out = [];
+          for (const c of candidates) {
+            const ent = getData.entities?.[c.id];
+            const coord = ent?.claims?.P625?.[0]?.mainsnak?.datavalue?.value;
+            if (!coord) continue;
+            const lng = coord.longitude, lat = coord.latitude;
+            if (bbox && (lng < bbox[0] || lng > bbox[2] || lat < bbox[1] || lat > bbox[3])) continue;
+            const instanceOf = (ent.claims?.P31 || []).map((cl) => cl.mainsnak?.datavalue?.value?.id).filter(Boolean);
+            const description = c.description || '';
+            let kind = 'place';
+            if (instanceOf.includes(PEAK_QID)) kind = 'peak';
+            else if (/\btrail\b/i.test(description)) kind = 'trail';
+            out.push({ name: c.label || query, kind, subtitle: description, lng, lat, qid: c.id });
+          }
+          return out;
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+
       function initSearch() {
         const input = document.getElementById('search-input');
         const resultsEl = document.getElementById('search-results');
@@ -2211,47 +2344,6 @@
           }
         }
 
-        const PEAK_QID = 'Q8502'; // mountain — same constant the peak-label feature already queries by
-        async function searchWikidata(query) {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 10000);
-          try {
-            const searchUrl = `https://www.wikidata.org/w/api.php?${new URLSearchParams({
-              action: 'wbsearchentities', search: query, language: 'en', format: 'json', origin: '*', limit: '12',
-            })}`;
-            const searchData = await fetch(searchUrl, { signal: controller.signal }).then((r) => r.json());
-            const candidates = searchData.search || [];
-            if (!candidates.length) return [];
-            const getUrl = `https://www.wikidata.org/w/api.php?${new URLSearchParams({
-              action: 'wbgetentities', ids: candidates.map((c) => c.id).join('|'), props: 'claims', format: 'json', origin: '*',
-            })}`;
-            const getData = await fetch(getUrl, { signal: controller.signal }).then((r) => r.json());
-            const out = [];
-            for (const c of candidates) {
-              const ent = getData.entities?.[c.id];
-              const coord = ent?.claims?.P625?.[0]?.mainsnak?.datavalue?.value;
-              if (!coord) continue;
-              const lng = coord.longitude, lat = coord.latitude;
-              // Only keep matches that actually fall inside this region's
-              // loaded coverage — the fast path to filtering out Utah's
-              // "Kings Peak" from the several same-named peaks/places
-              // elsewhere in the country/world that wbsearchentities also
-              // returns, without needing a slower/more complex SPARQL
-              // text+geo query.
-              if (bbox && (lng < bbox[0] || lng > bbox[2] || lat < bbox[1] || lat > bbox[3])) continue;
-              const instanceOf = (ent.claims?.P31 || []).map((cl) => cl.mainsnak?.datavalue?.value?.id).filter(Boolean);
-              const description = c.description || '';
-              let kind = 'place';
-              if (instanceOf.includes(PEAK_QID)) kind = 'peak';
-              else if (/\btrail\b/i.test(description)) kind = 'trail';
-              out.push({ name: c.label || query, kind, subtitle: description, lng, lat, qid: c.id });
-            }
-            return out;
-          } finally {
-            clearTimeout(timeout);
-          }
-        }
-
         async function searchGemSpots(query) {
           const rows = await getSpotsRows();
           const q = query.toLowerCase();
@@ -2297,7 +2389,7 @@
           const token = ++searchToken;
           resultsEl.innerHTML = '<p class="loading">Searching…</p>';
           const [wikidataResults, gemResults] = await Promise.all([
-            searchWikidata(query).catch((err) => { console.warn('Wikidata search failed', err); return []; }),
+            geocodePlace(query).catch((err) => { console.warn('Wikidata search failed', err); return []; }),
             searchGemSpots(query).catch((err) => { console.warn('Recommended-spot search failed', err); return []; }),
           ]);
           const onScreenResults = searchOnScreen(query);
@@ -2385,6 +2477,22 @@
       // What the scanner searches for — set directly by the preference
       // checkboxes, read live by scanForCampSpots() each time it runs.
       const spotFilterState = { view: new Set(), camp: new Set() };
+      // Checkbox inputs built by buildScanPreferencesPanel, keyed
+      // "group:key" — populated once the panel exists (Layers sheet has
+      // been opened at least once isn't required; buildScanPreferencesPanel
+      // runs during start()). setScanPref is the single place that flips
+      // both the Set state and the visible switch, so the AI Guide's
+      // run_camp_scan tool (see executeAiScanToolFn) can set preferences
+      // the same way a human tapping a switch would — the panel visibly
+      // reflects what the AI understood, instead of state changing invisibly
+      // behind it.
+      const scanPrefToggles = {};
+      function setScanPref(group, key, value) {
+        const set = spotFilterState[group];
+        if (value) set.add(key); else set.delete(key);
+        const toggle = scanPrefToggles[`${group}:${key}`];
+        if (toggle) toggle.checked = value;
+      }
 
       // Personal, on-device saved spots. There's no live backend here to
       // publish into the shared 82-site verified dataset — that lives in
@@ -3252,14 +3360,13 @@
           sub.textContent = groupName === 'view' ? 'View type' : 'Camp type';
           wrap.append(sub);
           for (const def of filterDefs.filter((d) => d.group === groupName)) {
-            wrap.append(createSwitchRow({
+            const row = createSwitchRow({
               label: def.label,
               checked: false,
-              onChange: (isChecked) => {
-                const set = spotFilterState[def.group];
-                if (isChecked) set.add(def.key); else set.delete(def.key);
-              },
-            }));
+              onChange: (isChecked) => setScanPref(def.group, def.key, isChecked),
+            });
+            scanPrefToggles[`${def.group}:${def.key}`] = row.querySelector('input[type="checkbox"]');
+            wrap.append(row);
           }
         }
 
@@ -3836,6 +3943,8 @@
     let gemSpotRows = [];
     let findCampSpotNearFn = null; // set inside start() once the map/scanner exist; used by card buttons defined at top level
     let downloadAreaAroundFn = null; // same pattern, for the "Download this area" button below
+    let executeAiScanToolFn = null; // same pattern, for the AI Guide's run_camp_scan tool call (initAIGuide() lives outside start(), like the card builders above)
+    let highlightScanIdFn = null; // same pattern, for flying to/emphasizing whichever scanned pin the AI Guide recommends
     let fetchLandmarksFn = null; // same pattern, lets downloadRegionForOffline pre-fetch peak/place names
     // Same pattern again: appendSaveButton/isSpotSaved/savedSpots all live
     // inside start() (they need the map instance for the pink saved-spot
@@ -4658,6 +4767,31 @@
     const AI_SETTINGS_KEY = 'bc_ai_settings';
     const AI_MAX_TOKENS = 2048; // headroom for a full spot-matching answer that lists a few candidates, not just a one-liner
     const MAX_HISTORY_MESSAGES = 12; // ~6 exchanges kept; older ones drop off rather than growing every request forever
+    const MAX_TOOL_ITERATIONS = 3; // caps a single turn's tool-call round-trips so a confused model can't loop forever
+
+    // The one tool the AI Guide can call: runs the real terrain/land-cover
+    // scanner (see executeAiScanToolFn, set inside start()) instead of
+    // guessing. Field names mirror the Scan Preferences checkboxes 1:1 —
+    // see setScanPref — so the executor can flip them exactly the way a
+    // human tapping a switch would, no translation layer. Described once
+    // here and adapted to each provider's native tool-schema shape at call
+    // time (see callAnthropic/callOpenAICompatible/callGoogle) instead of
+    // duplicating the schema per provider.
+    const RUN_CAMP_SCAN_TOOL_NAME = 'run_camp_scan';
+    const RUN_CAMP_SCAN_TOOL_DESCRIPTION = 'Run the real terrain and land-cover scanner to find dispersed-camping candidates matching given preferences. Only call this once you know what view the user wants and what they are camping with (or they have said they have no preference) — do not guess their answer. Returns real scanned candidates with a scan_id for each; never invent coordinates of your own.';
+    const RUN_CAMP_SCAN_TOOL_PARAMETERS = {
+      type: 'object',
+      properties: {
+        wantOpenValley: { type: 'boolean', description: 'User wants a wide, open valley view.' },
+        wantPanoramic: { type: 'boolean', description: 'User wants a sweeping, 360-degree/panoramic view.' },
+        wantWater: { type: 'boolean', description: 'User wants to be near a lake or stream.' },
+        wantWooded: { type: 'boolean', description: 'User wants tree cover, shade, or a wind break.' },
+        wantTrailer: { type: 'boolean', description: 'User is camping with a trailer/RV and needs a large flat pad.' },
+        area: { type: 'string', enum: ['current_view', 'named_place'], description: '"current_view" scans wherever the map is currently showing. "named_place" scans near a specific landmark/trailhead/peak not already in the SPOT TABLE.' },
+        placeName: { type: 'string', description: 'Required when area is "named_place": the landmark/trailhead/peak name to search near.' },
+      },
+      required: ['area'],
+    };
 
     const AI_SETTINGS_DEFAULT = { provider: 'anthropic', apiKey: '', model: AI_PROVIDERS.anthropic.defaultModel, baseUrl: '', webSearch: false };
     // Models Google has fully shut down (404 on every request) since
@@ -4792,8 +4926,9 @@ RULES:
     : 'you do NOT have web search access right now, so don\'t guess a nearby-but-different place as if it answers what they asked (e.g. don\'t substitute a well-known lake in a different canyon for an obscure landmark you don\'t actually know, and don\'t substitute a table row just because it shares a tag). If you don\'t have reliable knowledge of that specific place, say so plainly instead of guessing something adjacent — a wrong confident answer is worse than admitting the gap. (The user can turn on web search in AI Guide Settings for a small per-search cost if they want this looked up for real.)'
   }
 - Any suggestion that isn't an actually-connected table match — whether a memory-based guess or unconfirmed even after a search — must be prefixed "⚠️ Unverified lead (not in our database):" and must not invent specific-sounding details you don't actually have: no precise coordinates, and no fabricated turn-by-turn directions, mileage, road numbers, or "you'll see a pull-out near X" detail either — that level of specificity implies real knowledge you don't have and is worse than a vague pointer. Describe it at the level you actually know it (an area, drainage, or named trail) and tell the user to verify access/legality/conditions themselves.
-- If asked to "find a new spot," "something unique," or a spot that doesn't match anything already in the SPOT TABLE: check SCANNED CANDIDATES first (if present) — those are real, fresh terrain-scan results for the user's current map view, not something you found, so present them as "the scanner found..." not as your own discovery. Recommend the candidate(s) whose elevation/openness/wooded/water columns actually fit what the user described, using the same evaluation criteria above, and be upfront that they're computed from terrain shape and land-status only — unverified, not permitted campsites, not checked for legality beyond the scanner's own USFS/BLM-and-not-Wilderness-or-closure filter. If SCANNED CANDIDATES is empty or absent, tell the user to pan/zoom to the area they want and tap the star-shaped scan button (turns on 3D terrain automatically) so a real scan can run there, or, if they have web search enabled, use it for that specific place instead of guessing.
-- Never invent a brand-new latitude/longitude of your own. Every coordinate you give the user must come from either the SPOT TABLE or SCANNED CANDIDATES rows below — for anything else, describe the area/drainage/trail by name only (per the unverified-lead rule above) and let the user tap "Find a camp spot near here" or the scan button to get real coordinates, rather than fabricating one yourself.
+- If asked to "find a new spot," "something unique," or a spot that doesn't match anything already in the SPOT TABLE: check SCANNED CANDIDATES first (if present below) — if it already has candidates that actually fit what the user described, use those without re-scanning. Otherwise you have a run_camp_scan tool that runs the real terrain/land-cover scanner. Before calling it, make sure you know (a) what kind of view they want (open valley, panoramic/360, near water, wooded/sheltered, or no preference) and (b) what they're camping with (tent, hammock, or trailer/RV) — ask one short, natural question for whichever of these isn't already clear from the conversation, unless they've already told you both in one message. Once you know enough, call run_camp_scan with your best mapping of their answer onto its fields. Use area "current_view" unless they named a specific landmark/trailhead/peak that isn't already in the SPOT TABLE, in which case use area "named_place" with that name as placeName. Don't call it more than once per turn unless the first call's area genuinely failed to resolve (e.g. the place name wasn't found).
+- Once you have real candidates (from run_camp_scan's result or SCANNED CANDIDATES below), recommend exactly ONE whose elevation/openness/wooded/water columns actually fit what the user described, using the evaluation criteria above, and describe it the way RULES above already say to (plain sentences, real numbers, no column names). End that paragraph with its citation in parentheses exactly as given, e.g. "(ref: scan-111.23456-40.56789)" — the app uses this to point the map at that exact pin, so never paraphrase, omit, or alter it. Be upfront it's computed from terrain shape and land-status only — unverified, not a permitted campsite, not checked for legality beyond the scanner's own USFS/BLM-and-not-Wilderness-or-closure filter. If zero candidates come back, say so plainly and suggest a different area or loosening what they're looking for — never fabricate a spot instead of an honest "nothing found."
+- Never invent a brand-new latitude/longitude of your own. Every coordinate you give the user must come from either the SPOT TABLE, SCANNED CANDIDATES rows below, or a run_camp_scan result — for anything else, describe the area/drainage/trail by name only (per the unverified-lead rule above) and let the user tap "Find a camp spot near here," the scan button, or ask you to scan, rather than fabricating one yourself.
 - Be concise; use a short list when comparing spots.
 - Remind users conditions (fire restrictions, closures, seasonal access) change — check with the land manager before heading out.
 
@@ -4802,13 +4937,32 @@ ${spotsText}
 ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user's current map view — real DEM/land-status data, not curated or verified):\n${scanText}` : ''}`;
     }
 
-    async function callAnthropic(settings, system, messages) {
-      const body = { model: settings.model, max_tokens: AI_MAX_TOKENS, system, messages };
+    // --- Tool-calling support -------------------------------------------
+    // Each provider gets the run_camp_scan tool in its own native schema
+    // shape. A call*Raw function below does exactly one HTTP round trip
+    // and returns a structured result — {type:'text', text} or
+    // {type:'tool_call', name, args, appendToolTurn} — instead of a plain
+    // string, so the loop in send() (initAIGuide, below) can execute the
+    // tool and continue the conversation without any per-provider
+    // knowledge of what a tool call even looks like. appendToolTurn(
+    // nativeMessages, resultText) returns a NEW native-shape messages
+    // array with the assistant's tool call plus the executed result
+    // appended, in that provider's own format. Tool-call/result turns are
+    // deliberately never written into the cross-provider `history` array
+    // (see send()) — they're provider-native and wouldn't survive the
+    // user switching providers mid-conversation, same reasoning as why a
+    // reference photo's base64 gets stripped out after one use.
+    const ANTHROPIC_SCAN_TOOL = { name: RUN_CAMP_SCAN_TOOL_NAME, description: RUN_CAMP_SCAN_TOOL_DESCRIPTION, input_schema: RUN_CAMP_SCAN_TOOL_PARAMETERS };
+    const OPENAI_SCAN_TOOL = { type: 'function', function: { name: RUN_CAMP_SCAN_TOOL_NAME, description: RUN_CAMP_SCAN_TOOL_DESCRIPTION, parameters: RUN_CAMP_SCAN_TOOL_PARAMETERS } };
+    const GOOGLE_SCAN_TOOL = { functionDeclarations: [{ name: RUN_CAMP_SCAN_TOOL_NAME, description: RUN_CAMP_SCAN_TOOL_DESCRIPTION, parameters: RUN_CAMP_SCAN_TOOL_PARAMETERS }] };
+
+    async function callAnthropicRaw(settings, system, messages) {
+      const body = { model: settings.model, max_tokens: AI_MAX_TOKENS, system, messages, tools: [ANTHROPIC_SCAN_TOOL] };
       // Opt-in only (see AI Guide Settings) — real cost per search on top
       // of token usage, so it stays off by default. Capped at 2 searches
       // per message to bound that cost; most single-place lookups only
       // need one anyway.
-      if (settings.webSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }];
+      if (settings.webSearch) body.tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 2 });
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -4821,34 +4975,64 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || 'Anthropic request failed');
-      return (data.content || []).map((b) => b.text || '').join('');
+      const content = data.content || [];
+      const toolUse = content.find((b) => b.type === 'tool_use' && b.name === RUN_CAMP_SCAN_TOOL_NAME);
+      if (toolUse) {
+        return {
+          type: 'tool_call',
+          name: toolUse.name,
+          args: toolUse.input || {},
+          appendToolTurn: (nativeMessages, resultText) => [
+            ...nativeMessages,
+            { role: 'assistant', content },
+            { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: resultText }] },
+          ],
+        };
+      }
+      return { type: 'text', text: content.map((b) => b.text || '').join('') };
     }
 
-    async function callOpenAICompatible(settings, system, messages, endpoint) {
+    async function callOpenAICompatibleRaw(settings, system, messages, endpoint, noTools) {
       const headers = { 'content-type': 'application/json' };
       if (settings.apiKey) headers.authorization = `Bearer ${settings.apiKey}`;
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: settings.model,
-          messages: [{ role: 'system', content: system }, ...messages],
-          max_tokens: AI_MAX_TOKENS,
-        }),
-      });
+      const body = {
+        model: settings.model,
+        messages: [{ role: 'system', content: system }, ...messages],
+        max_tokens: AI_MAX_TOKENS,
+      };
+      if (!noTools) body.tools = [OPENAI_SCAN_TOOL];
+      const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message || 'Request failed');
-      return data?.choices?.[0]?.message?.content || '';
+      if (!res.ok) {
+        // Some OpenAI-compatible endpoints (mainly self-hosted/"custom")
+        // don't support the tools field at all and 400 on it — caught by
+        // the 'custom' case below, which retries once without tools.
+        const err = new Error(data?.error?.message || 'Request failed');
+        err.mightBeUnsupportedTools = !noTools && res.status === 400 && /tool|function/i.test(err.message);
+        throw err;
+      }
+      if (noTools) return { type: 'text', text: data?.choices?.[0]?.message?.content || '' };
+      const message = data?.choices?.[0]?.message || {};
+      const call = (message.tool_calls || []).find((c) => c.function?.name === RUN_CAMP_SCAN_TOOL_NAME);
+      if (call) {
+        let args = {};
+        try { args = JSON.parse(call.function.arguments || '{}'); } catch { /* malformed args from the model — treat as no preferences given */ }
+        return {
+          type: 'tool_call',
+          name: call.function.name,
+          args,
+          appendToolTurn: (nativeMessages, resultText) => [
+            ...nativeMessages,
+            message,
+            { role: 'tool', tool_call_id: call.id, content: resultText },
+          ],
+        };
+      }
+      return { type: 'text', text: message.content || '' };
     }
 
-    async function callGoogle(settings, system, messages) {
+    async function callGoogleRaw(settings, system, contents) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent?key=${encodeURIComponent(settings.apiKey)}`;
-      const contents = messages.map((m) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: Array.isArray(m.content)
-          ? m.content.map((c) => c.type === 'image' ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } } : { text: c.text })
-          : [{ text: m.content }],
-      }));
       // Gemini 2.5+/3.x models "think" by default, and those thinking
       // tokens are drawn from the same maxOutputTokens budget as the
       // visible answer (confirmed against reports of this exact symptom)
@@ -4864,11 +5048,36 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { maxOutputTokens: AI_MAX_TOKENS, thinkingConfig } }),
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents,
+          tools: [GOOGLE_SCAN_TOOL],
+          generationConfig: { maxOutputTokens: AI_MAX_TOKENS, thinkingConfig },
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || 'Google request failed');
-      return (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+      const parts = data?.candidates?.[0]?.content?.parts || [];
+      const call = parts.find((p) => p.functionCall && p.functionCall.name === RUN_CAMP_SCAN_TOOL_NAME);
+      if (call) {
+        return {
+          type: 'tool_call',
+          name: call.functionCall.name,
+          args: call.functionCall.args || {},
+          // Gemini's function-response turn shape below (role 'user'
+          // wrapping a functionResponse part) matches the current
+          // ai.google.dev function-calling docs at time of writing —
+          // verified against a live call during this feature's
+          // development; if Google changes the contract, this is the one
+          // spot to fix.
+          appendToolTurn: (nativeContents, resultText) => [
+            ...nativeContents,
+            { role: 'model', parts },
+            { role: 'user', parts: [{ functionResponse: { name: call.functionCall.name, response: { result: resultText } } }] },
+          ],
+        };
+      }
+      return { type: 'text', text: parts.map((p) => p.text || '').join('') };
     }
 
     // Anthropic and OpenAI-compatible both take the same shape for a
@@ -4883,36 +5092,111 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
         : { type: 'text', text: c.text });
     }
 
-    async function callAIProvider(settings, system, internalMessages) {
+    // Translates the persisted, cross-provider internal-shape history (see
+    // send()) into one provider's native message format ONCE per user
+    // turn — the tool-call loop then keeps working entirely in that native
+    // shape (see appendToolTurn above) without re-translating, since a
+    // tool-result turn has no internal-shape equivalent to translate from.
+    function buildNativeMessages(provider, internalMessages) {
+      if (provider === 'anthropic') return internalMessages; // already Anthropic-shaped — see toOpenAIContent's comment above
+      if (provider === 'google') {
+        return internalMessages.map((m) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: Array.isArray(m.content)
+            ? m.content.map((c) => c.type === 'image' ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } } : { text: c.text })
+            : [{ text: m.content }],
+        }));
+      }
+      return internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })); // openai, groq, custom
+    }
+
+    // One raw provider call, given already-native messages for that
+    // provider. Used both for a turn's first call and every tool-loop
+    // iteration after (see send()) — callAIProvider (below) is the
+    // internal-history-translating entry point used only for the first
+    // call of a turn.
+    async function callAIProviderRaw(settings, system, nativeMessages) {
       switch (settings.provider) {
         case 'anthropic':
-          return callAnthropic(settings, system, internalMessages);
+          return callAnthropicRaw(settings, system, nativeMessages);
         case 'openai':
-          return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.openai.com/v1/chat/completions');
+          return callOpenAICompatibleRaw(settings, system, nativeMessages, 'https://api.openai.com/v1/chat/completions');
         case 'groq': {
           // groq/compound is Groq's own tool-using system (web search,
-          // code execution, more) — same endpoint/request shape as a
-          // normal model, just a different model string, so swap it in
-          // for this call only rather than overwriting the user's saved
-          // model choice. But compound doesn't accept image input, so a
-          // reference-photo turn has to skip the swap and go out on
-          // whatever vision-capable model the user actually configured —
-          // otherwise every image message silently loses web search's
-          // model override to compound and gets rejected no matter which
-          // model is saved in settings.
-          const hasImage = internalMessages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image'));
-          const groqSettings = (settings.webSearch && !hasImage) ? { ...settings, model: 'groq/compound' } : settings;
-          return callOpenAICompatible(groqSettings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.groq.com/openai/v1/chat/completions');
+          // code execution, more) and isn't documented to accept custom
+          // function tools alongside its own built-ins — so a compound
+          // turn skips our run_camp_scan tool entirely (noTools) rather
+          // than risk sending a shape compound doesn't expect. That means
+          // enabling web search on Groq trades away the AI-driven scan
+          // for that turn; an accepted, honestly-documented trade-off
+          // rather than guessing at an unsupported combined request. A
+          // reference-photo turn already skips the compound swap for its
+          // own reason (compound doesn't accept image input either), so
+          // it keeps the scan tool as normal.
+          const hasImage = nativeMessages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url'));
+          const useCompound = settings.webSearch && !hasImage;
+          const groqSettings = useCompound ? { ...settings, model: 'groq/compound' } : settings;
+          return callOpenAICompatibleRaw(groqSettings, system, nativeMessages, 'https://api.groq.com/openai/v1/chat/completions', /* noTools */ useCompound);
         }
         case 'custom':
           if (!settings.baseUrl) throw new Error('Base URL is required for a custom provider');
-          return callOpenAICompatible(settings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), settings.baseUrl);
+          try {
+            return await callOpenAICompatibleRaw(settings, system, nativeMessages, settings.baseUrl);
+          } catch (err) {
+            if (!err.mightBeUnsupportedTools) throw err;
+            const fallback = await callOpenAICompatibleRaw(settings, system, nativeMessages, settings.baseUrl, /* noTools */ true);
+            fallback.text += '\n\n(This endpoint doesn\'t support the spot-scanning tool — I can only work from the spot table and any scan you\'ve already run manually.)';
+            return fallback;
+          }
         case 'google':
-          return callGoogle(settings, system, internalMessages);
+          return callGoogleRaw(settings, system, nativeMessages);
         default:
           throw new Error('Unsupported provider');
       }
     }
+
+    // The tool-call loop: translates the persisted internal-shape history
+    // to this provider's native format once, then keeps calling the
+    // provider and executing any run_camp_scan call it makes (via the
+    // executeAiScanToolFn bridge into start()'s closure — see
+    // executeAiScanTool) until it answers with plain text or the
+    // iteration cap is hit. onToolCall fires right before a tool executes,
+    // so the caller can swap the "Thinking…" indicator for something more
+    // specific. Only the final text return value is meant to be persisted
+    // into `history` — the intermediate native tool-call/result turns
+    // live solely in the local nativeMessages working copy for this one
+    // call, per the comment on appendToolTurn above.
+    async function runAiTurn(settings, system, internalMessages, onToolCall) {
+      let nativeMessages = buildNativeMessages(settings.provider, internalMessages);
+      for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+        const result = await callAIProviderRaw(settings, system, nativeMessages);
+        if (result.type === 'text') return result.text;
+        onToolCall && onToolCall();
+        const resultText = result.name === RUN_CAMP_SCAN_TOOL_NAME && executeAiScanToolFn
+          ? await executeAiScanToolFn(result.args)
+          : `Unknown tool "${result.name}" — no action taken, answer without it.`;
+        nativeMessages = result.appendToolTurn(nativeMessages, resultText);
+      }
+      return 'That took too many steps to finish (kept trying to scan) — try asking again with a narrower request.';
+    }
+
+    // The system prompt (aiSystemPrompt) instructs the model to cite its
+    // recommended candidate as "(ref: scan-<lng>-<lat>)" — pull the first
+    // such id out of the final reply and hand it to highlightScanIdFn
+    // (set inside start(), see highlightScanId) so the map actually flies
+    // to and emphasizes that exact pin. A no-op if the model didn't cite
+    // one (e.g. it answered from the SPOT TABLE instead) or cited an id
+    // that isn't in the current scan.
+    const SCAN_ID_PATTERN = /scan-[-\d.]+-[-\d.]+/;
+    function highlightScanIdInReply(text) {
+      const match = SCAN_ID_PATTERN.exec(text);
+      if (match && highlightScanIdFn) highlightScanIdFn(match[0]);
+    }
+    // Matches the whole "(ref: scan-<lng>-<lat>)" parenthetical (see
+    // aiSystemPrompt's citation rule) so send() can strip it from the
+    // displayed chat bubble — see SCAN_ID_PATTERN above for pulling just
+    // the id back out for the map-highlight side effect.
+    const SCAN_ID_CITATION_PATTERN = /\s*\(ref:\s*scan-[-\d.]+-[-\d.]+\)/i;
 
     function initAIGuide() {
       const settingsBtn = document.getElementById('ai-settings-btn');
@@ -5232,11 +5516,25 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
 
         try {
           const spotsText = await getSpotsContextFor(text, settings.provider);
-          const reply = await callAIProvider(settings, aiSystemPrompt(spotsText, settings.webSearch, lastScanContextTextRef), history);
+          const reply = await runAiTurn(
+            settings,
+            aiSystemPrompt(spotsText, settings.webSearch, lastScanContextTextRef),
+            history,
+            () => { typing.textContent = 'Scanning terrain…'; },
+          );
           typing.remove();
-          const replyEl = addBubble('assistant', reply || '(empty response)');
+          // The model's raw reply carries a "(ref: scan-<lng>-<lat>)"
+          // citation when it's recommending a scanned candidate (see
+          // aiSystemPrompt's citation rule) — needed for
+          // highlightScanIdInReply below, but a literal id string reads as
+          // a debugging artifact in a phone chat bubble, so strip it from
+          // what's actually displayed while keeping the full text (with
+          // citation) in `history` for the model's own later reference.
+          const displayText = (reply || '').replace(SCAN_ID_CITATION_PATTERN, '').trim();
+          const replyEl = addBubble('assistant', displayText || '(empty response)');
           history.push({ role: 'assistant', content: reply });
-          if (reply) upgradeBubbleWithSpotLinks(replyEl); // async — bubble renders instantly, links pop in a beat later
+          if (displayText) upgradeBubbleWithSpotLinks(replyEl); // async — bubble renders instantly, links pop in a beat later
+          if (reply) highlightScanIdInReply(reply); // flies to/emphasizes the pin the AI recommended, if it cited one
         } catch (err) {
           typing.remove();
           // "Failed to fetch" is the browser's generic label for "no
