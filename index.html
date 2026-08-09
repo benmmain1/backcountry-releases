@@ -1891,9 +1891,26 @@
         map.flyTo({ center: [lng, lat], zoom: 13.6, duration: 900 });
         say(`Looking for camp spots near ${label || 'this location'}…`, 'warn');
         await new Promise((resolve) => map.once('idle', resolve));
-        const found = await runCampScan();
+        let found = await runCampScan();
+        // The scanner only samples the current viewport, which at 13.6 is
+        // only a few square miles — real legal ground (on a mapped
+        // dispersed-camping route, off wilderness/closures) isn't
+        // guaranteed to fall inside that one narrow box, especially for a
+        // point that's some distance from the nearest mapped route. Widen
+        // the view and retry a couple of times before giving up, instead
+        // of leaving the user with what looks like a no-op after a single
+        // narrow pass — this does not loosen which ground counts as
+        // legal, only how much ground gets searched.
+        const WIDER_ZOOMS = [12.2, 10.8];
+        for (let i = 0; !found && i < WIDER_ZOOMS.length; i++) {
+          say(`Nothing that close — widening the search area…`, 'warn');
+          map.stop();
+          map.flyTo({ center: [lng, lat], zoom: WIDER_ZOOMS[i], duration: 700 });
+          await new Promise((resolve) => map.once('idle', resolve));
+          found = await runCampScan();
+        }
         if (!found) {
-          say(`No candidates near ${label || 'this spot'} yet — try the AI Trail Guide, or loosen Scan Preferences and try again`, 'warn');
+          say(`No legal, on-route dispersed-camping ground found within about 15 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
         }
       }
       findCampSpotNearFn = findCampSpotNear; // exposes it to the card-builder functions defined at top level
@@ -3045,6 +3062,12 @@
           });
         }
 
+        appendSaveButton(body, {
+          id: props.id != null ? `gem-${props.id}` : `gem-${lat.toFixed(5)}-${lng.toFixed(5)}`,
+          label: props.name,
+          coordinates: feature.geometry.coordinates,
+          source: 'curated',
+        });
         appendFindSpotButton(body, feature.geometry.coordinates, props.name);
       }, feature.geometry.coordinates, props.photo_url ? {
         url: props.photo_url,
