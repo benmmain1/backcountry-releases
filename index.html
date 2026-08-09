@@ -87,10 +87,13 @@
     font-size: 11px; font-weight: 600; letter-spacing: .04em; color: rgba(255,255,255,.85);
     text-shadow: 0 1px 4px rgba(0,0,0,.6);
   }
-  /* ---- View toolbar: just the two things worth reaching while looking
-     at the map (recenter, locate) — everything else that used to live
-     here (basemap/3D/scan) now lives in the Layers sheet, where there's
-     room to label it properly instead of a stack of floating chips. ---- */
+  /* ---- View toolbar: quick one-tap map-view controls (recenter, locate,
+     basemap, 3D) as small icon-only circles — no labels, since these are
+     meant for fast repeated use while actively looking at the map, not a
+     first-time-visitor discovery surface. A labeled sheet trades away
+     exactly the one-tap access that matters here, which is why these
+     stayed floating instead of moving in with Scan (a configure-then-run
+     action, where the extra tap doesn't cost anything real). ---- */
   #view-toolbar {
     position: absolute; z-index: 3; right: 10px; top: calc(max(10px, env(safe-area-inset-top)) + 54px);
     display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
@@ -102,16 +105,6 @@
     color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.3);
   }
   .fab-icon.active { background: var(--accent); color: var(--accent-ink); }
-
-  /* ---- Segmented control (Satellite/Topo basemap picker) ---- */
-  .segmented {
-    display: flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 2px;
-  }
-  .segmented-option {
-    flex: 1; border: none; background: none; cursor: pointer; padding: 8px 10px;
-    border-radius: 8px; font-size: 13.5px; font-weight: 700; color: var(--muted);
-  }
-  .segmented-option.active { background: var(--accent); color: var(--accent-ink); }
 
   /* Scan depends on 3D being on — dimmed (not disabled) as a hint, since
      tapping it while off still gives a real explanation via the status
@@ -225,14 +218,9 @@
     .sheet .grabber { display: none; }
   }
 
-  /* ---- Layers panel content ----
-     No :first-child rule here on purpose: the static "Map View" group is
-     the true first section (its own inline style drops its border), and
-     every dynamically-built group after it — starting with Land
-     Ownership — should keep its divider rather than have :first-child
-     match it too (it's the first child of #layers-body, a different
-     parent than Map View, but CSS :first-child doesn't know that). */
+  /* ---- Layers panel content ---- */
   #layers-sheet .group { padding: 14px 0; border-top: 1px solid var(--border); }
+  #layers-sheet .group:first-child { border-top: none; padding-top: 4px; }
   #layers-sheet .group h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
   #layers-sheet .row { display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer; }
   /* iOS/Android-style toggle switch, shared by map-layer toggles and the
@@ -495,6 +483,12 @@
       <button id="locate-btn" type="button" class="fab-icon" title="Track my location">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>
       </button>
+      <button id="basemap-btn" type="button" class="fab-icon" title="Switch to topo map">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>
+      </button>
+      <button id="terrain-btn" type="button" class="fab-icon" title="3D terrain">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 9 8l4 6.5 2-3L21 20H3Z"/></svg>
+      </button>
     </div>
   </div>
 
@@ -555,17 +549,6 @@
       <button type="button" class="sheet-close" data-close title="Close">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
-    </div>
-    <div class="group" style="border-top: none; padding-top: 4px;">
-      <h2>Map View</h2>
-      <div class="segmented">
-        <button type="button" id="basemap-satellite-btn" class="segmented-option active">Satellite</button>
-        <button type="button" id="basemap-topo-btn" class="segmented-option">Topo</button>
-      </div>
-      <label class="row" style="margin-top: 4px;">
-        <span class="switch"><input type="checkbox" id="terrain-toggle"><span class="track"><span class="thumb"></span></span></span>
-        <span class="label">3D View</span>
-      </label>
     </div>
     <div id="layers-body"></div>
     <button id="scan-btn" type="button" class="panel-btn dim">
@@ -738,9 +721,8 @@
     const regionsBtn = document.getElementById('regions-btn');
     const searchBtn = document.getElementById('search-btn');
     const recenterBtn = document.getElementById('recenter-btn');
-    const basemapSatelliteBtn = document.getElementById('basemap-satellite-btn');
-    const basemapTopoBtn = document.getElementById('basemap-topo-btn');
-    const terrainToggle = document.getElementById('terrain-toggle');
+    const basemapBtn = document.getElementById('basemap-btn');
+    const terrainBtn = document.getElementById('terrain-btn');
     const scanBtn = document.getElementById('scan-btn');
     const locateBtn = document.getElementById('locate-btn');
     const aboutSheet = document.getElementById('about-sheet');
@@ -1271,13 +1253,12 @@
       let basemap = 'satellite';
       function setBasemap(next) {
         basemap = next;
-        basemapSatelliteBtn.classList.toggle('active', basemap === 'satellite');
-        basemapTopoBtn.classList.toggle('active', basemap === 'topo');
+        basemapBtn.classList.toggle('active', basemap === 'topo');
+        basemapBtn.title = basemap === 'topo' ? 'Switch to satellite' : 'Switch to topo map';
         map.setLayoutProperty('satellite', 'visibility', basemap === 'satellite' ? 'visible' : 'none');
         map.setLayoutProperty('topo', 'visibility', basemap === 'topo' ? 'visible' : 'none');
       }
-      basemapSatelliteBtn.onclick = () => setBasemap('satellite');
-      basemapTopoBtn.onclick = () => setBasemap('topo');
+      basemapBtn.onclick = () => setBasemap(basemap === 'satellite' ? 'topo' : 'satellite');
 
       // 3D terrain: displaces the same raster-dem source already used for
       // flat hillshading into an actual mesh, then tilts the camera over
@@ -1323,7 +1304,7 @@
       let terrainOn = false;
       function setTerrainMode(on) {
         terrainOn = on;
-        terrainToggle.checked = on;
+        terrainBtn.classList.toggle('active', on);
         scanBtn.classList.toggle('dim', !on);
         // Only touch the label while it's in an idle state — leave
         // "Scanning…" / "Clear Results" alone if a scan is already
@@ -1345,7 +1326,7 @@
         // refresh now to add/drop it rather than waiting for the next pan.
         updateLandmarks();
       }
-      terrainToggle.onchange = () => setTerrainMode(terrainToggle.checked);
+      terrainBtn.onclick = () => setTerrainMode(!terrainOn);
 
       // Live elevation under the map center, onX-style — only meaningful
       // once setTerrain() is active (absoluteElevation() reads the
