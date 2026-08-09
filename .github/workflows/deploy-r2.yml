@@ -2,9 +2,15 @@ name: Deploy web app to R2
 
 on:
   push:
+    # Only main deploys. This used to also fire on any claude/** branch,
+    # which meant whichever branch a session happened to push last won —
+    # no merge gate, no relationship to which branch was "further along."
+    # That's what let multiple sessions each build in isolation believing
+    # their branch was the live app. Feature work now happens on claude/*
+    # branches as before, but nothing reaches production until it's
+    # merged into main.
     branches:
       - main
-      - "claude/**"
     paths:
       - "index.html"
       - "style.json"

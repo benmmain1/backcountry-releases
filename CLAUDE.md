@@ -1,14 +1,14 @@
 # Backcountry — orientation for Claude sessions
 
 Read this before touching anything. This repo has bitten multiple sessions
-(including this one) with the same two mistakes: confusing which app you're
-in, and trusting local/branch state instead of what's actually live. Both
-are avoidable if you check the things listed below first.
+with the same mistakes: confusing which app you're in, building on the
+wrong branch, and trusting local/branch state instead of what's actually
+live. All three are avoidable if you check the things listed below first.
 
 ## What this repo actually is
 
-This is **`benmmain1/backcountry-releases`**, and on this branch lineage
-(`claude/map-ui-redesign-fhhhxr` and its descendants) it is a **single-file
+This is **`benmmain1/backcountry-releases`**. On `main` — the only branch
+that deploys, and the only one you should build on — it is a **single-file
 static web app**: `index.html` + `style.json`, built on MapLibre GL JS,
 deployed as-is with no build step. That's the whole app: no framework, no
 bundler, no server.
@@ -16,27 +16,47 @@ bundler, no server.
 **There is also a completely different Next.js app living on other
 branches in this same repo** (e.g. `claude/backcountry-camping-finder-gxtc68`)
 with its own `src/`, `package.json`, `AGENTS.md`/`CLAUDE.md`, an AI search
-feature, and its own `src/data/spots.json`. **It is not the same app.** It
-is not deployed by the workflow below. If you're on the static-site
-lineage, do not reference features, files, or data from that Next.js app —
-they don't exist here. If you're unsure which one you're in, run
-`ls` — if you see `index.html` + `style.json` at the repo root, you're in
-the static site.
+feature, and its own `src/data/spots.json`. **It is not the same app, it is
+not on `main`, and it is not deployed by the workflow below.** Do not
+reference features, files, or data from it — they don't exist here. If
+you're unsure which one you're in, run `ls` — if you see `index.html` +
+`style.json` at the repo root, you're in the static site.
 
-## The shared-bucket trap — check this before trusting any local file
+## Work on `main`. Do not resurrect an old `claude/*` branch as your base.
 
-`.github/workflows/deploy-r2.yml` triggers on push to **any** `claude/**`
-branch and uploads `index.html`, `style.json`, and any `*.pmtiles` in the
-repo root straight to the **same** public R2 bucket
-(`pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev`) — the one actually serving
-the live site. There is no merge gate. Whichever branch pushes last wins,
-regardless of which branch you're working on.
+Before ~Aug 9 2026, `deploy-r2.yml` fired on push to **any** `claude/**`
+branch, straight to the live bucket, with no merge gate — whichever branch
+happened to push last won, regardless of which branch anyone was actually
+working on. Multiple sessions each built in isolation on their own branch,
+each believing theirs was "the app." One branch (`satellite-peaks-trails-
+search-1lskhn`) ended up furthest ahead — AI Trail Guide, 3D terrain,
+basemap toggle, campsite scanner — and was merged into the newly-created
+`main`. The others (`map-ui-redesign-fhhhxr`, `3d-map-viewing-a5dyzr`,
+`downloaded-regions-display-lbuh40`, `glitching-submission-issue-shre25`,
+`hidden-gem-picture-sources-2waxar`) are dead ends: earlier or divergent
+states, superseded by what's on `main` now. **Do not branch from any of
+them.** `git log --oneline -1 <branch>` will show you're looking at
+history older than `main`'s if you're ever unsure.
 
-**Consequence:** the file in your local branch checkout is not guaranteed
-to match what's live. Multiple sessions on multiple branches have pushed
-to this same bucket. Before making claims about "what's currently live" or
-building features on top of a committed file, verify against the real
-endpoints, not your git checkout:
+The fix going forward: `deploy-r2.yml` now only triggers on push to `main`.
+Feature work still happens on a `claude/*` branch (branched from `main`),
+but nothing reaches production until that branch is merged into `main`.
+Before starting work, confirm you branched from `main` — not from muscle
+memory of an old branch name, not from whatever this session's harness
+happened to check out.
+
+## The shared-bucket trap — still worth knowing about
+
+`.github/workflows/deploy-r2.yml` uploads `index.html`, `style.json`, and
+any `*.pmtiles` in the repo root straight to the public R2 bucket
+(`pub-0f98a7bc5f124d2c91ecc5e8ae899144.r2.dev`) on every push to `main`.
+The bucket also holds large data files (`.pmtiles` map data, the Android
+APK) that don't live in this repo — deploys upload, never delete.
+
+Before making claims about "what's currently live," verify against the
+real endpoints, not just your git checkout — a push to `main` needs a
+few seconds to land, and someone else may have pushed since you last
+checked:
 
 ```
 curl -s https://jxrbtqujdnuxvyoerfug.supabase.co/storage/v1/object/public/region-packs/ut/manifest.json
@@ -63,7 +83,7 @@ match what the manifest claims, that's a red flag: it means someone
   credential access from this repo to remove it manually). It's just
   unreferenced now.
 
-## Current real features on this static-site lineage
+## Current real features on `main`
 
 - MapLibre map over Esri satellite imagery, with an OpenTopoMap-based
   "topo" basemap toggle (free, keyless, CORS-verified directly).
