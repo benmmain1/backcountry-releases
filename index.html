@@ -3176,7 +3176,16 @@
       // (appendRouteButton) calls closeSheets() itself before invoking
       // this, since in that context the user tapped a button expecting to
       // watch the route draw.
-      async function routeTo(targetCoords, label) {
+      //
+      // The whole body is wrapped in try/catch (below) — every other
+      // network/data operation in this app always leaves the user with
+      // *some* visible outcome on failure; this one didn't, so any
+      // unexpected throw here (a real MapLibre quirk, a bad coordinate,
+      // anything not anticipated by the checks below) was a silent
+      // unhandled rejection: no error, no route, nothing — which is
+      // indistinguishable from "the feature doesn't work" from the
+      // outside. Never let that happen again.
+      async function routeToInner(targetCoords, label) {
         const startCoords = await getRouteStartPoint();
         if (haversineMeters(startCoords, targetCoords) > MAX_ROUTE_DISTANCE_M) {
           say(`${label || 'That spot'} is too far from your position for this best-effort router (it only works with map data that's actually loaded) — try navigating closer first`, 'warn');
@@ -3186,7 +3195,16 @@
         const bounds = boundsOfCoordinates([startCoords, targetCoords]);
         const pad = 0.01;
         map.fitBounds([bounds[0] - pad, bounds[1] - pad, bounds[2] + pad, bounds[3] + pad], { padding: 60, duration: 900 });
-        await new Promise((resolve) => map.once('idle', resolve));
+        // map.once('idle', ...) has no built-in timeout — if MapLibre never
+        // fires a fresh 'idle' event after this fitBounds (e.g. the camera
+        // was already effectively at the target, so no new render/settle
+        // cycle happens), this would otherwise hang forever right after the
+        // "Finding a route…" toast, with no further feedback ever. A race
+        // against a plain timeout guarantees this always moves forward.
+        await Promise.race([
+          new Promise((resolve) => map.once('idle', resolve)),
+          new Promise((resolve) => setTimeout(resolve, 4000)),
+        ]);
 
         const { nodes, segments } = buildRoutingGraph();
         if (!segments.length) {
@@ -3218,6 +3236,14 @@
         if (endSnap.distMeters > OFF_NETWORK_SKIP_M) features.push(lineFeature([endSnap.point, targetCoords], 'off-network'));
         setRouteFeatures(features);
         say(`Best-effort route to ${label || 'this spot'} — follows mapped trails/roads where possible, dashed where you're off them. Not a substitute for navigation skills.`, 'warn');
+      }
+      async function routeTo(targetCoords, label) {
+        try {
+          await routeToInner(targetCoords, label);
+        } catch (err) {
+          console.warn('Routing failed', err);
+          say('Could not find a route — something went wrong. Try again, or move to an area with more map data loaded.', 'error');
+        }
       }
       routeToFn = routeTo;
 
