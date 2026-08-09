@@ -372,6 +372,13 @@
   .wildfire-note.watch { background: rgba(224,176,115,.14); border-color: rgba(224,176,115,.4); }
   .wildfire-note p { margin: 0; color: var(--text); font-size: 13px; }
   .satellite-thumb { display: block; width: 100%; height: 160px; object-fit: cover; border-radius: 10px; margin: 2px 0 12px; background: var(--border); }
+  .info-thumb-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 12px; }
+  .info-thumb-row .satellite-thumb { margin: 0; height: 130px; }
+  .info-thumb-row figure { margin: 0; }
+  .info-thumb-row figcaption { font-size: 10.5px; color: var(--muted); text-align: center; margin-top: 3px; }
+  .info-reasoning { background: var(--bg); border-radius: 12px; padding: 10px 12px; margin: 0 0 12px; }
+  .info-reasoning .info-section-title { margin: 0 0 4px; }
+  .info-reasoning p { margin: 0; font-size: 13px; line-height: 1.45; }
   /* Facts sit on their own card surface instead of bleeding into the
      sheet background — reads as a distinct section at a glance. */
   .info-facts { display: flex; flex-direction: column; background: var(--bg); border-radius: 12px; padding: 3px 12px; }
@@ -2732,6 +2739,52 @@
         new URLSearchParams({ bbox, bboxSR: '4326', imageSR: '4326', size: '400,300', format: 'jpg', f: 'image' });
     }
 
+    // Same keyless/CORS-friendly export pattern as satelliteThumbUrl above,
+    // against Esri's World_Hillshade service instead of World_Imagery — a
+    // shaded-relief render of the real DEM, so it reads as "3D terrain" at a
+    // glance without spinning up a second live MapLibre/WebGL instance just
+    // to screenshot one (this app's actual 3D terrain view has already
+    // crashed the tab twice from tile/memory blowup at wide zoom — see
+    // CLAUDE.md — so a static relief image is the safe way to give every
+    // spot card a terrain preview, not a live render).
+    function terrainHillshadeThumbUrl(lat, lon) {
+      const padDeg = 0.006; // same ~1300 ft square as the satellite thumb, for a matched pair
+      const bbox = [lon - padDeg, lat - padDeg, lon + padDeg, lat + padDeg].join(',');
+      return 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/export?' +
+        new URLSearchParams({ bbox, bboxSR: '4326', imageSR: '4326', size: '400,300', format: 'png', f: 'image' });
+    }
+
+    // Deterministic, computed straight from this spot's own real data
+    // columns — not a model call — using the same evaluation criteria the
+    // AI guide's system prompt applies (wind/shelter, tent pad, water/LNT,
+    // treeline, access, prior use, season; see aiSystemPrompt's "HOW TO
+    // EVALUATE A SPOT" below). Explains *why* this spot was surfaced as a
+    // recommendation, using only fields already on the row.
+    function gemSpotReasoning(props, viewTypes, campTypes) {
+      const sentences = [];
+      const sheltered = viewTypes.some((v) => ['forest', 'canyon'].includes(v));
+      const exposed = viewTypes.some((v) => ['ridge_summit', 'valley_overlook', 'desert_slickrock'].includes(v));
+      if (sheltered) sentences.push('Tree or canyon cover gives real wind shelter here, trading a bit of view for a calmer camp.');
+      else if (exposed) sentences.push('This is an open, exposed setup — big views, but expect more wind and less shelter than a treed site.');
+
+      const nearWater = viewTypes.some((v) => ['lake', 'river', 'waterfall'].includes(v));
+      if (nearWater) sentences.push('It sits near water, which is the draw — camp at least 200 ft back from the shoreline to keep it Leave No Trace.');
+
+      const elev = Number(props.elevation_ft) || 0;
+      if (elev >= 10500) sentences.push(`At ${elev.toLocaleString()} ft it's above typical Utah treeline, so it's realistically a June/July-through-September window — check snowpack before a shoulder-season trip.`);
+      else if (elev > 0) sentences.push(`At ${elev.toLocaleString()} ft it's below treeline, so it's more forest-sheltered and has a longer usable season than an alpine site would.`);
+
+      if (props.access_type) sentences.push(`Access is rated ${(ACCESS_TYPE_LABELS[props.access_type] || titleCase(props.access_type)).toLowerCase()} — treat that as a hard constraint on the vehicle/hike you'll need, not a suggestion.`);
+
+      if (campTypes.includes('tent') && campTypes.length === 1) sentences.push('Marked tent-only — look for gentle, well-drained ground away from drainages before you commit to a pad.');
+      else if (campTypes.includes('hammock')) sentences.push('Hammock-friendly — worth a look for tree spacing even if you\'re not bringing one.');
+      else if (campTypes.includes('trailer')) sentences.push('Rated for trailer/RV camping, so the access route and pad should already handle a larger rig.');
+
+      if (props.wilderness) sentences.push('It\'s inside a designated wilderness area, so no motorized/mechanized travel (including e-bikes) on the way in.');
+
+      return sentences.join(' ');
+    }
+
     function setInfoIcon(style) {
       const el = document.getElementById('info-icon');
       el.style.background = style.color;
@@ -2774,6 +2827,20 @@
       el.className = 'info-badge' + (extraClass ? ` ${extraClass}` : '');
       el.textContent = text;
       return el;
+    }
+
+    function thumbFigure(src, alt, caption) {
+      const fig = document.createElement('figure');
+      const img = document.createElement('img');
+      img.className = 'satellite-thumb';
+      img.loading = 'lazy';
+      img.alt = alt;
+      img.src = src;
+      fig.append(img);
+      const cap = document.createElement('figcaption');
+      cap.textContent = caption;
+      fig.append(cap);
+      return fig;
     }
 
     function paragraph(text, extraClass) {
@@ -3202,12 +3269,13 @@
       openInfoCard('Recommended Spot · ' + (FOREST_NAMES[props.forest_unit_id] || 'Utah'), props.name, (body) => {
         const [lng, lat] = feature.geometry.coordinates;
 
-        const img = document.createElement('img');
-        img.className = 'satellite-thumb';
-        img.loading = 'lazy';
-        img.alt = 'Satellite view of ' + props.name;
-        img.src = satelliteThumbUrl(lat, lng);
-        body.append(img);
+        const thumbRow = document.createElement('div');
+        thumbRow.className = 'info-thumb-row';
+        thumbRow.append(
+          thumbFigure(satelliteThumbUrl(lat, lng), 'Satellite view of ' + props.name, 'Satellite'),
+          thumbFigure(terrainHillshadeThumbUrl(lat, lng), '3D terrain shaded relief of ' + props.name, '3D Terrain'),
+        );
+        body.append(thumbRow);
 
         if (props.wildfire_status === 'active_nearby' || props.wildfire_status === 'watch') {
           const note = document.createElement('div');
@@ -3235,6 +3303,14 @@
           factRow('Coordinate precision', titleCase(String(props.coordinate_confidence || '').replace(/-/g, ' '))),
         ].forEach((row) => row && facts.append(row));
         if (facts.children.length) body.append(facts);
+
+        const reasoningText = gemSpotReasoning(props, viewTypes, campTypes);
+        if (reasoningText) {
+          const reasoning = document.createElement('div');
+          reasoning.className = 'info-reasoning';
+          reasoning.append(sectionTitle('Why this spot'), paragraph(reasoningText));
+          body.append(reasoning);
+        }
 
         if (props.description) body.append(paragraph(props.description, 'info-desc'));
 
