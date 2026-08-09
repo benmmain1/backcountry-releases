@@ -3544,7 +3544,7 @@
       openai: { label: 'ChatGPT (OpenAI)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false, keyUrl: 'https://platform.openai.com/api-keys' },
       google: { label: 'Gemini (Google)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
       groq: {
-        label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use llama-3.2-11b-vision-preview if you want image upload to work', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys',
+        label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use qwen/qwen3.6-27b if you want image upload to work (Groq retired its older llama-3.2-*-vision-preview models)', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys',
         webSearchCostHint: 'Switches to Groq\'s "compound" system (web search, code execution, more) for this account. Their docs don\'t publish exact pricing/rate limits for it separately from normal models — check console.groq.com/settings/billing after enabling if that matters to you.',
       },
       custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Grok, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
@@ -4047,7 +4047,7 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           const msg = err.message === 'Failed to fetch'
             ? 'Could not reach the AI service at all. If you picked "Other", double-check the Base URL in AI Guide Settings → Advanced. Otherwise this is likely a network block on this connection.'
             : looksLikeVisionRejection
-              ? `The model configured in AI Guide Settings ("${settings.model}") doesn't accept image input. Switch to a vision-capable model (e.g. gpt-4o/gpt-4o-mini, claude-sonnet-5, gemini-1.5-flash, or llama-3.2-11b-vision-preview on Groq) to use reference photos. Provider said: ${err.message}`
+              ? `The model configured in AI Guide Settings ("${settings.model}") doesn't accept image input. Switch to a vision-capable model (e.g. gpt-4o/gpt-4o-mini, claude-sonnet-5, gemini-1.5-flash, or qwen/qwen3.6-27b on Groq) to use reference photos. Provider said: ${err.message}`
               : err.message;
           const el = addBubble('error', `Something went wrong: ${msg}`);
           el.classList.add('error');
