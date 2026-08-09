@@ -2255,126 +2255,6 @@
       // checkboxes, read live by scanForCampSpots() each time it runs.
       const spotFilterState = { view: new Set(), camp: new Set() };
 
-      // Personal, on-device saved spots. There's no live backend here to
-      // publish into the shared 82-site verified dataset — that lives in
-      // a pipeline outside this repo — so "save" means this browser's
-      // localStorage, not a submission anyone else sees. Kept as a
-      // visually distinct layer/color everywhere so it never reads as
-      // part of the verified data.
-      const SAVED_SPOTS_KEY = 'backcountry-saved-spots-v1';
-      function loadSavedSpots() {
-        try {
-          return JSON.parse(localStorage.getItem(SAVED_SPOTS_KEY) || '[]');
-        } catch (err) {
-          console.warn('Failed to read saved spots', err);
-          return [];
-        }
-      }
-      function writeSavedSpots() {
-        try {
-          localStorage.setItem(SAVED_SPOTS_KEY, JSON.stringify(savedSpots));
-        } catch (err) {
-          console.warn('Failed to persist saved spots', err);
-        }
-      }
-      let savedSpots = loadSavedSpots();
-
-      function ensureSavedSpotLayers() {
-        if (map.getSource('saved-spots')) return;
-        map.addSource('saved-spots', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-        map.addLayer({
-          id: 'saved-spot-dot',
-          type: 'circle',
-          source: 'saved-spots',
-          paint: {
-            'circle-radius': 6,
-            'circle-color': '#e05fa0',
-            'circle-stroke-width': 1.5,
-            'circle-stroke-color': '#7a1f4d',
-            'circle-pitch-alignment': 'viewport',
-          },
-        });
-        map.addLayer({
-          id: 'saved-spot-label',
-          type: 'symbol',
-          source: 'saved-spots',
-          layout: {
-            'text-field': ['get', 'label'],
-            'text-font': ['Open Sans Regular'],
-            'text-size': 12,
-            'text-offset': [0, -1.2],
-            'text-anchor': 'bottom',
-            'text-pitch-alignment': 'viewport',
-            'text-rotation-alignment': 'viewport',
-            'text-allow-overlap': false,
-          },
-          paint: {
-            'text-color': '#ffffff',
-            'text-halo-color': 'rgba(20,22,18,0.9)',
-            'text-halo-width': 1.4,
-          },
-        });
-        for (const id of ['saved-spot-dot', 'saved-spot-label']) {
-          map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
-          map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
-        }
-      }
-      function refreshSavedSpotsLayer() {
-        ensureSavedSpotLayers();
-        map.getSource('saved-spots').setData({
-          type: 'FeatureCollection',
-          features: savedSpots.map((s) => ({
-            type: 'Feature',
-            properties: { id: s.id, label: `★ ${s.label}` },
-            geometry: { type: 'Point', coordinates: s.coordinates },
-          })),
-        });
-      }
-      function isSpotSaved(id) {
-        return savedSpots.some((s) => s.id === id);
-      }
-      function saveSpot(entry) {
-        if (isSpotSaved(entry.id)) return false;
-        savedSpots.push({ ...entry, savedAt: new Date().toISOString() });
-        writeSavedSpots();
-        refreshSavedSpotsLayer();
-        return true;
-      }
-      function unsaveSpot(id) {
-        savedSpots = savedSpots.filter((s) => s.id !== id);
-        writeSavedSpots();
-        refreshSavedSpotsLayer();
-      }
-
-      // Shared save/unsave controls for info cards — "save" always means
-      // this browser's localStorage, never a submission to the shared
-      // verified dataset (no backend exists for that here), so the label
-      // says so every time rather than implying otherwise.
-      function appendSaveButton(body, entry) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'panel-btn';
-        const saved = isSpotSaved(entry.id);
-        btn.textContent = saved ? 'Saved to this device ✓' : 'Save to this device';
-        btn.disabled = saved;
-        btn.onclick = () => {
-          saveSpot(entry);
-          btn.textContent = 'Saved to this device ✓';
-          btn.disabled = true;
-        };
-        body.append(btn);
-        body.append(paragraph('Saved on this device only — there\'s no backend here to publish or share it.', 'info-desc'));
-      }
-      function appendUnsaveButton(body, id) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'panel-btn';
-        btn.textContent = 'Remove from saved';
-        btn.onclick = () => { unsaveSpot(id); closeSheets(); };
-        body.append(btn);
-      }
-
-
       function showScanResultCard(feature) {
         const props = feature.properties;
         const result = lastScanResults.get(props.scanId);
@@ -2951,6 +2831,131 @@
     // independently of map load (so its settings UI works immediately),
     // but needs this to fly to and open a spot a reply links to.
     let mapRef = null;
+
+    // Personal, on-device saved spots. There's no live backend here to
+    // publish into the shared 82-site verified dataset — that lives in a
+    // pipeline outside this repo — so "save" means this browser's
+    // localStorage, not a submission anyone else sees. Kept as a visually
+    // distinct layer/color everywhere so it never reads as part of the
+    // verified data. Lives at top level (not inside start()) because
+    // showGemSpotCard, which needs appendSaveButton, is also top level —
+    // it previously called into start()'s closure and threw
+    // "appendSaveButton is not defined" on every gem-spot tap, which
+    // aborted the card before it ever opened.
+    const SAVED_SPOTS_KEY = 'backcountry-saved-spots-v1';
+    function loadSavedSpots() {
+      try {
+        return JSON.parse(localStorage.getItem(SAVED_SPOTS_KEY) || '[]');
+      } catch (err) {
+        console.warn('Failed to read saved spots', err);
+        return [];
+      }
+    }
+    function writeSavedSpots() {
+      try {
+        localStorage.setItem(SAVED_SPOTS_KEY, JSON.stringify(savedSpots));
+      } catch (err) {
+        console.warn('Failed to persist saved spots', err);
+      }
+    }
+    let savedSpots = loadSavedSpots();
+
+    function ensureSavedSpotLayers() {
+      if (!mapRef || mapRef.getSource('saved-spots')) return;
+      mapRef.addSource('saved-spots', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      mapRef.addLayer({
+        id: 'saved-spot-dot',
+        type: 'circle',
+        source: 'saved-spots',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#e05fa0',
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#7a1f4d',
+          'circle-pitch-alignment': 'viewport',
+        },
+      });
+      mapRef.addLayer({
+        id: 'saved-spot-label',
+        type: 'symbol',
+        source: 'saved-spots',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['Open Sans Regular'],
+          'text-size': 12,
+          'text-offset': [0, -1.2],
+          'text-anchor': 'bottom',
+          'text-pitch-alignment': 'viewport',
+          'text-rotation-alignment': 'viewport',
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': 'rgba(20,22,18,0.9)',
+          'text-halo-width': 1.4,
+        },
+      });
+      for (const id of ['saved-spot-dot', 'saved-spot-label']) {
+        mapRef.on('mouseenter', id, () => { mapRef.getCanvas().style.cursor = 'pointer'; });
+        mapRef.on('mouseleave', id, () => { mapRef.getCanvas().style.cursor = ''; });
+      }
+    }
+    function refreshSavedSpotsLayer() {
+      if (!mapRef) return;
+      ensureSavedSpotLayers();
+      mapRef.getSource('saved-spots').setData({
+        type: 'FeatureCollection',
+        features: savedSpots.map((s) => ({
+          type: 'Feature',
+          properties: { id: s.id, label: `★ ${s.label}` },
+          geometry: { type: 'Point', coordinates: s.coordinates },
+        })),
+      });
+    }
+    function isSpotSaved(id) {
+      return savedSpots.some((s) => s.id === id);
+    }
+    function saveSpot(entry) {
+      if (isSpotSaved(entry.id)) return false;
+      savedSpots.push({ ...entry, savedAt: new Date().toISOString() });
+      writeSavedSpots();
+      refreshSavedSpotsLayer();
+      return true;
+    }
+    function unsaveSpot(id) {
+      savedSpots = savedSpots.filter((s) => s.id !== id);
+      writeSavedSpots();
+      refreshSavedSpotsLayer();
+    }
+
+    // Shared save/unsave controls for info cards — "save" always means
+    // this browser's localStorage, never a submission to the shared
+    // verified dataset (no backend exists for that here), so the label
+    // says so every time rather than implying otherwise.
+    function appendSaveButton(body, entry) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'panel-btn';
+      const saved = isSpotSaved(entry.id);
+      btn.textContent = saved ? 'Saved to this device ✓' : 'Save to this device';
+      btn.disabled = saved;
+      btn.onclick = () => {
+        saveSpot(entry);
+        btn.textContent = 'Saved to this device ✓';
+        btn.disabled = true;
+      };
+      body.append(btn);
+      body.append(paragraph('Saved on this device only — there\'s no backend here to publish or share it.', 'info-desc'));
+    }
+    function appendUnsaveButton(body, id) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'panel-btn';
+      btn.textContent = 'Remove from saved';
+      btn.onclick = () => { unsaveSpot(id); closeSheets(); };
+      body.append(btn);
+    }
+
     let gemSpotsRef = null; // { layerId, loaded } from addGemSpotsLayer
     // The exact rows addGemSpotsLayer actually rendered (live fetch or its
     // own offline/IndexedDB fallback) — click-matching reads this directly
