@@ -1817,6 +1817,19 @@
         const box = [[px.x - r, px.y - r], [px.x + r, px.y + r]];
         return map.queryRenderedFeatures(box, { layers: ['mvum-routes-dispersed'] }).length > 0;
       }
+      // One-off point check for findCampSpotNear's final "nothing found"
+      // message — unlike isLegalCampLand (called per-candidate inside a
+      // grid loop that already forces the wilderness layer visible once
+      // for the whole pass), this runs a single time on the target point
+      // itself, so it does its own visibility toggle around just this
+      // query.
+      function isInsideWilderness([lng, lat]) {
+        const wildernessWasHidden = map.getLayoutProperty('wilderness', 'visibility') !== 'visible';
+        if (wildernessWasHidden) map.setLayoutProperty('wilderness', 'visibility', 'visible');
+        const inside = map.queryRenderedFeatures(map.project([lng, lat]), { layers: ['wilderness'] }).length > 0;
+        if (wildernessWasHidden) map.setLayoutProperty('wilderness', 'visibility', 'none');
+        return inside;
+      }
       // Lower is flatter — max elevation swing across a small ring of
       // sample points around the candidate, a cheap proxy for how bumpy
       // the ground is (real tent-pad quality, not just "not on a cliff").
@@ -2209,7 +2222,20 @@
           found = await runCampScan();
         }
         if (!found && !lastScanErrored) {
-          say(`No legal, on-route dispersed-camping ground found within about 5 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
+          // "Loosen Scan Preferences" / "may not have mapped routes
+          // nearby" implies this is a search that just hasn't turned
+          // something up yet — misleading and worth calling "lying" when
+          // the target is inside designated Wilderness, where motorized/
+          // mechanized travel (so any mapped vehicle-camping route) is
+          // legally impossible, not merely unmapped. This scanner only
+          // ever finds ground on such a route, so say plainly that no
+          // scan setting changes the outcome here, instead of implying
+          // one might.
+          if (isInsideWilderness([lng, lat])) {
+            say(`${label || 'This spot'} is inside designated Wilderness — motor vehicles and mechanized travel aren't allowed there, so there's no dispersed vehicle-camping ground to find, here or anywhere else inside that Wilderness boundary. This scanner only finds spots on a mapped vehicle route; no amount of retrying or loosening Scan Preferences changes that. If you're backpacking in, dispersed tent camping is generally fine on durable, already-impacted ground 200+ ft from water and trails — ask the AI Trail Guide for specifics, or check with the ranger district.`, 'warn');
+          } else {
+            say(`No legal, on-route dispersed-camping ground found within about 5 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
+          }
         }
         return found;
       }
@@ -2273,6 +2299,16 @@
             return `Could not find a place named "${args.placeName}" to scan near. Tell the user to try a different/more specific name, or ask to scan their current map view instead.`;
           }
           found = await findCampSpotNear([matches[0].lng, matches[0].lat], matches[0].name);
+          // Same distinction as findCampSpotNear's own status message: a
+          // Wilderness-designated target has categorically no dispersed
+          // vehicle-camping ground to find (motor vehicles/mechanized
+          // travel aren't legally allowed there at all), not just
+          // "nothing mapped yet" — telling the model to suggest loosening
+          // preferences or trying again for a Wilderness spot would have
+          // it repeat that misleading framing to the user.
+          if (!found && !lastScanErrored && isInsideWilderness([matches[0].lng, matches[0].lat])) {
+            return `"${matches[0].name}" is inside designated Wilderness — motor vehicles and mechanized travel aren't allowed there, so there is categorically no dispersed vehicle-camping ground to find, not merely "none mapped yet." Tell the user this plainly and do not suggest loosening Scan Preferences or trying again, since no scan setting changes a Wilderness boundary. If they're backpacking in, dispersed tent camping is generally fine on durable, already-impacted ground 200+ ft from water and trails — mention that as the actual option, and suggest checking the ranger district for specifics.`;
+          }
         } else {
           // Mirrors findCampSpotNear's own terrain-on handling — the star
           // button instead just refuses and asks the human to flip the
