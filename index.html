@@ -2182,14 +2182,18 @@
         await new Promise((resolve) => map.once('idle', resolve));
         let found = await runCampScan();
         // The scanner only samples the current viewport, which at 13.6 is
-        // only a few square miles — real legal ground (on a mapped
+        // only a couple of square miles — real legal ground (on a mapped
         // dispersed-camping route, off wilderness/closures) isn't
         // guaranteed to fall inside that one narrow box, especially for a
-        // point that's some distance from the nearest mapped route. Widen
-        // the view and retry a couple of times before giving up, instead
-        // of leaving the user with what looks like a no-op after a single
-        // narrow pass — this does not loosen which ground counts as
-        // legal, only how much ground gets searched.
+        // point that's some distance from the nearest mapped route. One
+        // modest widen step (zoom 12.6, roughly a 5-mile-wide view) covers
+        // that gap without leaving "near here" — this used to escalate all
+        // the way to zoom 10.8 (~15 miles wide), which could return a
+        // "found it" result that was actually many miles from the place
+        // the user actually asked about, with nothing in the UI making
+        // that distance clear. This does not loosen which ground counts
+        // as legal, only how much ground gets searched, and it stays
+        // honestly "near."
         // A scan that actually threw (lastScanErrored) is not the same as
         // one that legitimately found zero candidates — retrying it is
         // pointless (same error, same spot) and, worse, each retry's
@@ -2197,16 +2201,15 @@
         // the specific error from runCampScan's own catch block before
         // anyone could read it. Stop immediately and leave that error on
         // screen instead.
-        const WIDER_ZOOMS = [12.2, 10.8];
-        for (let i = 0; !found && !lastScanErrored && i < WIDER_ZOOMS.length; i++) {
-          say(`Nothing that close — widening the search area…`, 'warn');
+        if (!found && !lastScanErrored) {
+          say(`Nothing that close — checking a bit further out…`, 'warn');
           map.stop();
-          map.flyTo({ center: [lng, lat], zoom: WIDER_ZOOMS[i], duration: 700 });
+          map.flyTo({ center: [lng, lat], zoom: 12.6, duration: 700 });
           await new Promise((resolve) => map.once('idle', resolve));
           found = await runCampScan();
         }
         if (!found && !lastScanErrored) {
-          say(`No legal, on-route dispersed-camping ground found within about 15 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
+          say(`No legal, on-route dispersed-camping ground found within about 5 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
         }
         return found;
       }
