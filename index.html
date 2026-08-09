@@ -4007,6 +4007,7 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
         else content.push({ type: 'text', text: 'Here is a reference photo of the kind of spot I want. What do you see, and which of our spots (or what kind of unlisted spot) matches it best?' });
         if (pendingImage) content.push({ type: 'image', source: { type: 'base64', media_type: pendingImage.mimeType, data: pendingImage.base64 } });
         history.push({ role: 'user', content: content.length === 1 && !pendingImage ? text : content });
+        const hadImage = !!pendingImage;
 
         textInput.value = '';
         pendingImage = null;
@@ -4035,9 +4036,19 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           // from the provider itself, there's no server-supplied message
           // to show, so say what to actually go check instead of
           // repeating the unhelpful raw text.
+          // A reference photo sent to a non-vision model gets rejected by
+          // the provider's own request validation before it ever reaches a
+          // model — the wording differs by provider/proxy ("content must
+          // be a string", "does not support image input", "invalid image
+          // url", etc.) but it only happens on image turns, so catch that
+          // whole class here instead of chasing each provider's exact text.
+          const looksLikeVisionRejection = hadImage
+            && /content\b.*\bmust be a string|does(?:n'| no)t support image|invalid[_ ]?image|image[_ ]?url.*invalid|vision/i.test(err.message || '');
           const msg = err.message === 'Failed to fetch'
             ? 'Could not reach the AI service at all. If you picked "Other", double-check the Base URL in AI Guide Settings → Advanced. Otherwise this is likely a network block on this connection.'
-            : err.message;
+            : looksLikeVisionRejection
+              ? `The model configured in AI Guide Settings ("${settings.model}") doesn't accept image input. Switch to a vision-capable model (e.g. gpt-4o/gpt-4o-mini, claude-sonnet-5, gemini-1.5-flash, or llama-3.2-11b-vision-preview on Groq) to use reference photos. Provider said: ${err.message}`
+              : err.message;
           const el = addBubble('error', `Something went wrong: ${msg}`);
           el.classList.add('error');
         } finally {
