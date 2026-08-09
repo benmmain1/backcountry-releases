@@ -250,6 +250,22 @@
   #regions-body .region-row .go { color: var(--muted); flex: none; }
   #regions-body .empty { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
 
+  /* ---- Offline Maps: download a region's data once, use it with zero
+     signal afterward. Lives at the top of the Regions sheet. ---- */
+  .offline-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-top: 1px solid var(--border);
+  }
+  .offline-row:first-child { border-top: none; }
+  .offline-label { font-size: 14.5px; font-weight: 700; }
+  .offline-meta { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+  .offline-action {
+    flex: none; border: none; cursor: pointer; padding: 8px 14px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 13px;
+  }
+  .offline-action:disabled { opacity: .6; cursor: default; }
+  .offline-action.danger { background: rgba(200,40,30,.14); color: #c8281e; }
+
   /* ---- Search sheet: find a peak/trail/spot by name, then jump there ---- */
   #search-input {
     width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border);
@@ -288,6 +304,13 @@
      its managed element, which otherwise beats this class rule. */
   .region-pin.hidden { opacity: 0 !important; pointer-events: none; }
   .region-pin .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+
+  /* ---- "You are here" marker for live GPS tracking ---- */
+  .location-dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #4a90e2; border: 3px solid #fff;
+    box-shadow: 0 0 0 2px rgba(74,144,226,.5), 0 2px 6px rgba(0,0,0,.4);
+  }
 
   /* ---- Info card: tap a trail or rec site to see details ---- */
   #info-sheet .info-head { display: flex; align-items: center; gap: 12px; }
@@ -464,6 +487,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 2.9 6.3L21 9l-4.9 4.5L17.4 20 12 16.8 6.6 20l1.3-6.5L3 9l6.1-.7Z"/></svg>
         Scan
       </button>
+      <button id="locate-btn" type="button" class="view-chip" title="Track my location">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>
+        Locate
+      </button>
     </div>
   </div>
 
@@ -536,6 +563,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
+    <div id="offline-body"></div>
     <p id="regions-intro">Loading…</p>
     <div id="regions-body"></div>
   </div>
@@ -695,6 +723,7 @@
     const basemapBtn = document.getElementById('basemap-btn');
     const terrainBtn = document.getElementById('terrain-btn');
     const scanBtn = document.getElementById('scan-btn');
+    const locateBtn = document.getElementById('locate-btn');
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
     const regionsSheet = document.getElementById('regions-sheet');
@@ -804,6 +833,142 @@
       },
     ];
 
+    // ---- Offline maps: download a pmtiles archive whole and read tiles
+    // back out of it locally, so the map keeps working with zero network.
+    //
+    // pmtiles.js already has exactly the plug point this needs: a PMTiles
+    // instance takes any object with getKey()/getBytes(offset, length) as
+    // its "source" (that's literally how its own FileSource works, for
+    // reading a pmtiles archive the user picked from local disk), and
+    // Protocol.add(instance) makes the pmtiles:// scheme resolve to a
+    // pre-built instance instead of creating a new network-backed one —
+    // keyed by exact URL match. So: download the archive into IndexedDB
+    // once, wrap it in a tiny Source that slices bytes out of the stored
+    // Blob, and register it before the map is created. If no offline copy
+    // exists for a given archive, none of this runs and Protocol falls
+    // back to its normal FetchSource exactly as before — this is purely
+    // additive, the online path is untouched.
+    const OFFLINE_DB_NAME = 'backcountry-offline';
+    const OFFLINE_STORE = 'archives';
+
+    function openOfflineDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(OFFLINE_DB_NAME, 1);
+        req.onupgradeneeded = () => { req.result.createObjectStore(OFFLINE_STORE); };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    async function getOfflineArchive(url) {
+      const db = await openOfflineDB();
+      return new Promise((resolve, reject) => {
+        const req = db.transaction(OFFLINE_STORE, 'readonly').objectStore(OFFLINE_STORE).get(url);
+        req.onsuccess = () => resolve(req.result || null); // { blob, size, savedAt } | null
+        req.onerror = () => reject(req.error);
+      });
+    }
+    async function putOfflineArchive(url, record) {
+      const db = await openOfflineDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(OFFLINE_STORE, 'readwrite');
+        tx.objectStore(OFFLINE_STORE).put(record, url);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+    async function deleteOfflineArchive(url) {
+      const db = await openOfflineDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(OFFLINE_STORE, 'readwrite');
+        tx.objectStore(OFFLINE_STORE).delete(url);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    // Matches pmtiles' FileSource shape exactly (getKey + getBytes(offset,
+    // length) -> { data: ArrayBuffer }), just backed by an IndexedDB-stored
+    // Blob instead of a user-picked File.
+    class OfflineBlobSource {
+      constructor(url, blob) {
+        this.url = url;
+        this.blob = blob;
+      }
+      getKey() { return this.url; }
+      async getBytes(offset, length) {
+        const data = await this.blob.slice(offset, offset + length).arrayBuffer();
+        return { data };
+      }
+    }
+
+    // Derives the downloadable archives from the style itself (source id,
+    // real URL, and a human label) instead of hardcoding filenames, so this
+    // keeps working if style.json's sources ever change.
+    function extractPmtilesArchives(style) {
+      const archives = [];
+      for (const [sourceId, source] of Object.entries(style.sources || {})) {
+        if (typeof source.url === 'string' && source.url.startsWith('pmtiles://')) {
+          archives.push({
+            sourceId,
+            url: source.url.slice('pmtiles://'.length),
+            label: source.type === 'raster-dem' ? '3D terrain' : 'Trails & land data',
+          });
+        }
+      }
+      return archives;
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes) return '0 MB';
+      const mb = bytes / (1024 * 1024);
+      return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`;
+    }
+
+    // Downloads the whole archive as one GET (no Range — pmtiles' own
+    // Range reads are for partial access over the network; offline use
+    // needs the complete file), reporting progress via Content-Length.
+    // Only written to IndexedDB after a full, successful download — a
+    // failed/interrupted attempt just leaves no offline copy rather than
+    // a corrupt partial one.
+    async function downloadArchiveForOffline(archive, onProgress) {
+      const res = await fetch(archive.url);
+      if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
+      const total = Number(res.headers.get('Content-Length')) || 0;
+      const reader = res.body.getReader();
+      const chunks = [];
+      let received = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        if (onProgress) onProgress(received, total);
+      }
+      const blob = new Blob(chunks);
+      if (navigator.storage && navigator.storage.persist) {
+        try { await navigator.storage.persist(); } catch { /* best-effort */ }
+      }
+      await putOfflineArchive(archive.url, { blob, size: blob.size, savedAt: new Date().toISOString() });
+      return blob;
+    }
+
+    // Registers whichever archives already have an offline copy, before
+    // the map is created — see the big comment above for why this is
+    // enough to make MapLibre read from local storage with zero code
+    // changes anywhere else in the app.
+    async function registerOfflineSources(protocol, archives) {
+      for (const archive of archives) {
+        try {
+          const stored = await getOfflineArchive(archive.url);
+          if (stored && stored.blob) {
+            protocol.add(new pmtiles.PMTiles(new OfflineBlobSource(archive.url, stored.blob)));
+          }
+        } catch (err) {
+          console.warn('Offline archive lookup failed', archive.url, err);
+        }
+      }
+    }
+
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol('pmtiles', protocol.tile);
 
@@ -818,6 +983,13 @@
       const centre = bbox
         ? [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
         : [-111.5, 39.5];
+
+      // Register any already-downloaded offline archives before the map
+      // is created, so its very first tile requests already resolve
+      // locally — see registerOfflineSources above for why this is safe
+      // to always attempt (a no-op when nothing's been downloaded).
+      const offlineArchives = extractPmtilesArchives(style);
+      await registerOfflineSources(protocol, offlineArchives);
 
       const map = new maplibregl.Map({
         container: 'map',
@@ -842,6 +1014,57 @@
           map.flyTo({ center: centre, zoom: 7.4 });
         }
       };
+
+      // Live "you are here" tracking — this is what makes an offline map
+      // actually useful in the backcountry (no signal is exactly when you
+      // most want to see your own position). Foreground-only: a plain web
+      // page/PWA has no background location access on either platform,
+      // and iOS Safari in particular never grants it outside the app
+      // being open and on-screen — that gap is one of the real reasons a
+      // native app is the eventual answer for serious trail use.
+      let locationMarker = null;
+      let locationWatchId = null;
+      let locationTracking = false;
+
+      function stopLocationTracking() {
+        locationTracking = false;
+        locateBtn.classList.remove('active');
+        if (locationWatchId != null) navigator.geolocation.clearWatch(locationWatchId);
+        locationWatchId = null;
+        if (locationMarker) { locationMarker.remove(); locationMarker = null; }
+      }
+
+      function startLocationTracking() {
+        if (!('geolocation' in navigator)) {
+          say('Location is not available in this browser', 'error');
+          return;
+        }
+        locationTracking = true;
+        locateBtn.classList.add('active');
+        let firstFix = true;
+        locationWatchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const { longitude, latitude } = pos.coords;
+            if (!locationMarker) {
+              const el = document.createElement('div');
+              el.className = 'location-dot';
+              locationMarker = new maplibregl.Marker({ element: el, anchor: 'center' });
+            }
+            locationMarker.setLngLat([longitude, latitude]).addTo(map);
+            if (firstFix) {
+              firstFix = false;
+              map.flyTo({ center: [longitude, latitude], zoom: Math.max(map.getZoom(), 13), duration: 800 });
+            }
+          },
+          (err) => {
+            say(`Couldn't get your location: ${err.message}`, 'error');
+            stopLocationTracking();
+          },
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+        );
+      }
+
+      locateBtn.onclick = () => (locationTracking ? stopLocationTracking() : startLocationTracking());
 
       // Topo basemap: OpenTopoMap (OSM data + SRTM, free/keyless/CORS-
       // enabled — checked directly) as an alternative to satellite
@@ -1995,6 +2218,7 @@
         const regions = await loadAvailableRegions(manifest);
         addRegionCoverage(map, regions);
         buildRegionsPanel(map, regions);
+        buildOfflinePanel(offlineArchives);
         initSearch();
       });
     }
@@ -2652,6 +2876,118 @@
           if (trail) return showTrailCard(trail);
         }
       });
+    }
+
+    async function buildOfflinePanel(archives) {
+      const container = document.getElementById('offline-body');
+      container.innerHTML = '';
+      if (!archives.length) return;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'group';
+      const heading = document.createElement('h2');
+      heading.textContent = 'Offline Maps';
+      wrap.append(heading);
+      const note = document.createElement('p');
+      note.className = 'group-note';
+      note.textContent = 'Download once and the map keeps working with no signal — including live location tracking, once it has a fix. Trail & land data is the essential piece; 3D terrain is optional and much larger.';
+      wrap.append(note);
+
+      for (const archive of archives) {
+        wrap.append(await buildOfflineRow(archive));
+      }
+      container.append(wrap);
+    }
+
+    async function buildOfflineRow(archive) {
+      const row = document.createElement('div');
+      row.className = 'offline-row';
+
+      const info = document.createElement('div');
+      info.className = 'offline-info';
+      const label = document.createElement('div');
+      label.className = 'offline-label';
+      label.textContent = archive.label;
+      const meta = document.createElement('div');
+      meta.className = 'offline-meta';
+      meta.textContent = 'Checking…';
+      info.append(label, meta);
+
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'offline-action';
+      action.textContent = '…';
+      action.disabled = true;
+
+      row.append(info, action);
+
+      // Best-effort size preview — a HEAD request, not the actual
+      // download, so this is safe/cheap to do for every row up front.
+      let remoteSize = 0;
+      try {
+        const head = await fetch(archive.url, { method: 'HEAD' });
+        remoteSize = Number(head.headers.get('Content-Length')) || 0;
+      } catch { /* no size preview, not fatal */ }
+
+      async function refresh() {
+        const stored = await getOfflineArchive(archive.url).catch(() => null);
+        if (stored) {
+          meta.textContent = `${formatBytes(stored.size)} · saved ${new Date(stored.savedAt).toLocaleDateString()}`;
+          action.textContent = 'Delete';
+          action.classList.add('danger');
+        } else {
+          meta.textContent = remoteSize ? `~${formatBytes(remoteSize)} · not downloaded` : 'Not downloaded';
+          action.textContent = 'Download';
+          action.classList.remove('danger');
+        }
+        action.disabled = false;
+      }
+
+      action.onclick = async () => {
+        const stored = await getOfflineArchive(archive.url).catch(() => null);
+        action.disabled = true;
+        if (stored) {
+          action.textContent = 'Deleting…';
+          await deleteOfflineArchive(archive.url);
+          // Stop serving this session's tiles from the copy that's now
+          // gone — Protocol has no public unregister, but this.tiles is
+          // a plain Map, so removing the entry is safe and falls back to
+          // normal FetchSource on the next request for this URL.
+          protocol.tiles.delete(archive.url);
+          await refresh();
+          return;
+        }
+        try {
+          await downloadArchiveForOffline(archive, (received, total) => {
+            meta.textContent = total
+              ? `Downloading… ${formatBytes(received)} / ${formatBytes(total)} (${Math.round((received / total) * 100)}%)`
+              : `Downloading… ${formatBytes(received)}`;
+          });
+          say(`${archive.label} saved for offline use`);
+        } catch (err) {
+          say(`Download failed: ${err.message}`, 'error');
+          await refresh();
+          return;
+        }
+        // Usable for the rest of this session immediately, not just after
+        // a reload — see registerOfflineSources for why this one extra
+        // protocol.add() call is all that's needed. Kept out of the try
+        // above and never surfaced as an error: the download itself
+        // already succeeded and is safely on disk by this point, so a
+        // problem here shouldn't read to the user as "your download
+        // failed" — worst case, it behaves like offline wasn't set up
+        // for this session until the next reload.
+        try {
+          const fresh = await getOfflineArchive(archive.url);
+          if (fresh) protocol.add(new pmtiles.PMTiles(new OfflineBlobSource(archive.url, fresh.blob)));
+        } catch (err) {
+          console.warn('Could not register offline source for this session', err);
+        }
+        await refresh();
+      };
+
+      await refresh();
+      return row;
     }
 
     function buildRegionsPanel(map, regions) {
