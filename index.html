@@ -548,8 +548,17 @@
   #ai-settings-error { color: #c8281e; min-height: 0; }
   #ai-settings-error:empty { display: none; margin: 0; }
 
+  /* bottom offset stacks on top of #bottom-nav's own safe-area-aware
+     offset (~60px of nav content+padding, see #bottom-nav below) plus a
+     margin, so the toast always clears the nav bar instead of being
+     covered by it (it used to share the same bottom:~12-14px band, with
+     a lower z-index than the nav, so a warn/error message — which
+     persists until dismissed, see say() — sat almost entirely hidden
+     underneath it). Scales together with the nav bar's own safe-area
+     term instead of a fixed pixel value, so this stays true on notched
+     devices too. */
   #status {
-    position: absolute; bottom: 12px; left: 12px; z-index: 2;
+    position: absolute; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 70px); left: 12px; z-index: 2;
     background: rgba(0,0,0,.72); color: #fff; padding: 6px 10px;
     border-radius: 8px; font-size: 11.5px; display: flex; align-items: center; gap: 6px;
     transition: opacity .3s; pointer-events: none;
@@ -1960,6 +1969,16 @@
         }
       }
 
+      // Distinguishes "the scan threw a real error" from "the scan ran
+      // fine and legitimately found zero candidates" — both otherwise
+      // collapse to the same `found = false` return from runCampScan(),
+      // which made findCampSpotNear's widen-and-retry loop below silently
+      // overwrite a real, specific error message with its own generic
+      // "widening the search area…"/"no legal ground found" messaging on
+      // every retry, so a genuine failure never stayed on screen long
+      // enough to read (compounding the separate #status-hidden-behind-
+      // the-nav-bar bug).
+      let lastScanErrored = false;
       let lastScanResults = new Map(); // scanId -> result, for the click-to-open card
       // Plain-text summary of the last scan's results, refreshed each run —
       // fed to the AI Trail Guide (see aiSystemPrompt) so it can reason
@@ -2006,6 +2025,7 @@
       // the scanBtn-specific show/hide-toggle behavior wrapped around it.
       async function runCampScan() {
         const token = ++scanRequestToken;
+        lastScanErrored = false;
         scanBtn.classList.add('active');
         scanBtn.textContent = 'Scanning…';
         const activePrefs = [...spotFilterState.view, ...spotFilterState.camp];
@@ -2056,7 +2076,13 @@
           return results.length > 0;
         } catch (err) {
           console.error('Camp spot scan failed', err);
-          say('Spot scan failed — try again', 'error');
+          lastScanErrored = true;
+          // Include the real message instead of a generic "try again" —
+          // this toast used to be unreadable anyway (hidden behind the
+          // bottom nav, see #status's CSS), so a vague message never got
+          // a chance to actually help; now that it's visible, it should
+          // be specific enough to self-diagnose from the phone alone.
+          say(`Spot scan failed: ${err.message || err} — try again`, 'error');
           scanBtn.classList.remove('active');
           scanBtn.textContent = 'Find Camp Spots';
           return false;
@@ -2138,15 +2164,22 @@
         // of leaving the user with what looks like a no-op after a single
         // narrow pass — this does not loosen which ground counts as
         // legal, only how much ground gets searched.
+        // A scan that actually threw (lastScanErrored) is not the same as
+        // one that legitimately found zero candidates — retrying it is
+        // pointless (same error, same spot) and, worse, each retry's
+        // "widening…"/"no ground found" message would silently overwrite
+        // the specific error from runCampScan's own catch block before
+        // anyone could read it. Stop immediately and leave that error on
+        // screen instead.
         const WIDER_ZOOMS = [12.2, 10.8];
-        for (let i = 0; !found && i < WIDER_ZOOMS.length; i++) {
+        for (let i = 0; !found && !lastScanErrored && i < WIDER_ZOOMS.length; i++) {
           say(`Nothing that close — widening the search area…`, 'warn');
           map.stop();
           map.flyTo({ center: [lng, lat], zoom: WIDER_ZOOMS[i], duration: 700 });
           await new Promise((resolve) => map.once('idle', resolve));
           found = await runCampScan();
         }
-        if (!found) {
+        if (!found && !lastScanErrored) {
           say(`No legal, on-route dispersed-camping ground found within about 15 miles of ${label || 'this spot'} — try the AI Trail Guide, loosen Scan Preferences, or this area just may not have mapped dispersed routes nearby`, 'warn');
         }
         return found;
@@ -2195,6 +2228,14 @@
           found = await runCampScan();
         }
 
+        // Distinguish a real failure (lastScanErrored, set by
+        // runCampScan's catch) from a legitimate zero-candidate result —
+        // collapsing them into the same "found nothing" message would
+        // have the model confidently tell the user "no spots here" when
+        // the scan actually never completed.
+        if (!found && lastScanErrored) {
+          return 'The scanner hit a technical error and did not complete (not the same as finding zero candidates). Tell the user the scan failed and to try again, rather than saying no spots were found.';
+        }
         if (!found) {
           return 'The scanner ran but found zero legal candidates matching those preferences in that area (no mapped dispersed-camping route nearby, or everything nearby is Wilderness/closed/too rough for the requested setup). Tell the user plainly and suggest a different area or loosening what they are looking for — do not invent a spot instead.';
         }
