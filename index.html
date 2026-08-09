@@ -704,6 +704,35 @@
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
   <script>
+    // ---- TEMPORARY DEBUG OVERLAY — remove once the gem-spot click issue
+    // is confirmed fixed. Shows JS errors directly on screen since this is
+    // being diagnosed live on a phone with no easy devtools access. Tap
+    // the box to dismiss/clear it. ----
+    (function setupDebugOverlay() {
+      const box = document.createElement('div');
+      box.id = 'debug-error-overlay';
+      box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:40vh;overflow:auto;'
+        + 'background:rgba(20,0,0,0.94);color:#ff9a8a;font:11px/1.45 monospace;padding:8px 10px;'
+        + 'z-index:99999;white-space:pre-wrap;display:none;border-top:2px solid #ff5c4d;';
+      document.addEventListener('DOMContentLoaded', () => document.body.appendChild(box));
+      function logErr(msg) {
+        if (!box.isConnected) document.body.appendChild(box);
+        box.style.display = 'block';
+        const line = document.createElement('div');
+        line.style.marginBottom = '6px';
+        line.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
+        box.appendChild(line);
+        box.scrollTop = box.scrollHeight;
+      }
+      window.addEventListener('error', (e) => {
+        logErr(`${e.message}${e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno}:${e.colno})` : ''}`);
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        logErr(`Unhandled promise rejection: ${e.reason && e.reason.message ? e.reason.message : e.reason}`);
+      });
+      box.addEventListener('click', () => { box.style.display = 'none'; box.innerHTML = ''; });
+    })();
+
     const statusEl = document.getElementById('status');
     const statusText = document.getElementById('status-text');
     // 'info' auto-hides after a moment (the normal case: "loaded", "found
