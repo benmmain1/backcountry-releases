@@ -833,73 +833,93 @@
       },
     ];
 
-    // ---- Offline maps: download a pmtiles archive whole and read tiles
-    // back out of it locally, so the map keeps working with zero network.
+    // ---- Offline maps: download the actual tiles for a chosen area, not
+    // the whole multi-hundred-MB/multi-GB archive.
     //
-    // pmtiles.js already has exactly the plug point this needs: a PMTiles
-    // instance takes any object with getKey()/getBytes(offset, length) as
-    // its "source" (that's literally how its own FileSource works, for
-    // reading a pmtiles archive the user picked from local disk), and
-    // Protocol.add(instance) makes the pmtiles:// scheme resolve to a
-    // pre-built instance instead of creating a new network-backed one —
-    // keyed by exact URL match. So: download the archive into IndexedDB
-    // once, wrap it in a tiny Source that slices bytes out of the stored
-    // Blob, and register it before the map is created. If no offline copy
-    // exists for a given archive, none of this runs and Protocol falls
-    // back to its normal FetchSource exactly as before — this is purely
-    // additive, the online path is untouched.
+    // pmtiles is a tile-indexed format built exactly for partial access —
+    // that's the whole point of its directory structure — so "download
+    // the entire file" was throwing that away. Instead: work out which
+    // z/x/y tiles cover the target area at a useful zoom range, pull each
+    // one through the SAME PMTiles instance the live map already uses
+    // (so this reuses its header/directory caching instead of
+    // reimplementing the binary format), and store the resulting
+    // tile bytes individually in IndexedDB, keyed by archive+z+x+y.
+    //
+    // Serving is a thin wrapper in front of the normal pmtiles protocol
+    // handler: for every tile request, check the local cache first; a
+    // miss falls straight through to protocol.tile exactly as before.
+    // Areas nobody downloaded just behave exactly like today (network,
+    // or blank if actually offline) — this is purely additive.
     const OFFLINE_DB_NAME = 'backcountry-offline';
-    const OFFLINE_STORE = 'archives';
+    const OFFLINE_DB_VERSION = 2;
+    const TILES_STORE = 'tiles';
+    const REGIONS_STORE = 'regions';
+    const MISC_STORE = 'misc';
 
     function openOfflineDB() {
       return new Promise((resolve, reject) => {
-        const req = indexedDB.open(OFFLINE_DB_NAME, 1);
-        req.onupgradeneeded = () => { req.result.createObjectStore(OFFLINE_STORE); };
+        const req = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+        req.onupgradeneeded = (event) => {
+          const db = req.result;
+          // v1 (an earlier whole-archive design, never shipped to real
+          // users) stored a single 'archives' store — drop it rather than
+          // migrate, nothing depends on that shape anymore.
+          if (event.oldVersion < 2) {
+            if (db.objectStoreNames.contains('archives')) db.deleteObjectStore('archives');
+            db.createObjectStore(TILES_STORE);
+            db.createObjectStore(REGIONS_STORE);
+            db.createObjectStore(MISC_STORE);
+          }
+        };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
     }
-    async function getOfflineArchive(url) {
+    async function idbGet(storeName, key) {
       const db = await openOfflineDB();
       return new Promise((resolve, reject) => {
-        const req = db.transaction(OFFLINE_STORE, 'readonly').objectStore(OFFLINE_STORE).get(url);
-        req.onsuccess = () => resolve(req.result || null); // { blob, size, savedAt } | null
+        const req = db.transaction(storeName, 'readonly').objectStore(storeName).get(key);
+        req.onsuccess = () => resolve(req.result ?? null);
         req.onerror = () => reject(req.error);
       });
     }
-    async function putOfflineArchive(url, record) {
+    async function idbPut(storeName, key, value) {
       const db = await openOfflineDB();
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(OFFLINE_STORE, 'readwrite');
-        tx.objectStore(OFFLINE_STORE).put(record, url);
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put(value, key);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
     }
-    async function deleteOfflineArchive(url) {
+    async function idbDelete(storeName, key) {
       const db = await openOfflineDB();
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(OFFLINE_STORE, 'readwrite');
-        tx.objectStore(OFFLINE_STORE).delete(url);
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).delete(key);
         tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+    async function idbGetAll(storeName) {
+      const db = await openOfflineDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const keysReq = store.getAllKeys();
+        const valuesReq = store.getAll();
+        // Both requests are in the same transaction, so oncomplete only
+        // fires once both have resolved — simpler and less error-prone
+        // than juggling two independent onsuccess callbacks.
+        tx.oncomplete = () => resolve(keysReq.result.map((k, i) => [k, valuesReq.result[i]]));
         tx.onerror = () => reject(tx.error);
       });
     }
 
-    // Matches pmtiles' FileSource shape exactly (getKey + getBytes(offset,
-    // length) -> { data: ArrayBuffer }), just backed by an IndexedDB-stored
-    // Blob instead of a user-picked File.
-    class OfflineBlobSource {
-      constructor(url, blob) {
-        this.url = url;
-        this.blob = blob;
-      }
-      getKey() { return this.url; }
-      async getBytes(offset, length) {
-        const data = await this.blob.slice(offset, offset + length).arrayBuffer();
-        return { data };
-      }
-    }
+    function tileKey(archiveUrl, z, x, y) { return `${archiveUrl}|${z}|${x}|${y}`; }
+    const getTile = (archiveUrl, z, x, y) => idbGet(TILES_STORE, tileKey(archiveUrl, z, x, y));
+    const putTile = (archiveUrl, z, x, y, data) => idbPut(TILES_STORE, tileKey(archiveUrl, z, x, y), { data });
+    const deleteTile = (archiveUrl, z, x, y) => idbDelete(TILES_STORE, tileKey(archiveUrl, z, x, y));
 
     // Derives the downloadable archives from the style itself (source id,
     // real URL, and a human label) instead of hardcoding filenames, so this
@@ -924,53 +944,170 @@
       return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`;
     }
 
-    // Downloads the whole archive as one GET (no Range — pmtiles' own
-    // Range reads are for partial access over the network; offline use
-    // needs the complete file), reporting progress via Content-Length.
-    // Only written to IndexedDB after a full, successful download — a
-    // failed/interrupted attempt just leaves no offline copy rather than
-    // a corrupt partial one.
-    async function downloadArchiveForOffline(archive, onProgress) {
-      const res = await fetch(archive.url);
-      if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
-      const total = Number(res.headers.get('Content-Length')) || 0;
-      const reader = res.body.getReader();
-      const chunks = [];
-      let received = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        if (onProgress) onProgress(received, total);
+    // Standard slippy-map tile math (Web Mercator).
+    function lonLatToTileXY(lon, lat, z) {
+      const n = 2 ** z;
+      const x = Math.floor(((lon + 180) / 360) * n);
+      const latRad = (lat * Math.PI) / 180;
+      const y = Math.floor(
+        ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n
+      );
+      return [Math.min(Math.max(x, 0), n - 1), Math.min(Math.max(y, 0), n - 1)];
+    }
+    function tileRangeForBbox([w, s, e, n], z) {
+      const [x0, y0] = lonLatToTileXY(w, n, z); // NW corner
+      const [x1, y1] = lonLatToTileXY(e, s, z); // SE corner
+      return { xMin: Math.min(x0, x1), xMax: Math.max(x0, x1), yMin: Math.min(y0, y1), yMax: Math.max(y0, y1) };
+    }
+    function tileCountForBbox(bbox, minZoom, maxZoom) {
+      let count = 0;
+      for (let z = minZoom; z <= maxZoom; z++) {
+        const r = tileRangeForBbox(bbox, z);
+        count += (r.xMax - r.xMin + 1) * (r.yMax - r.yMin + 1);
       }
-      const blob = new Blob(chunks);
+      return count;
+    }
+
+    // Useful default range for "follow a trail / explore an area" offline
+    // use: 8 is roughly regional overview, 15 is close enough to make out
+    // individual roads/trails and land parcels. Deeper than that grows
+    // tile counts fast for very little practical navigation benefit.
+    const OFFLINE_MIN_ZOOM = 8;
+    const OFFLINE_MAX_ZOOM = 15;
+    // Rough average bytes/tile, sampled from this app's actual archives —
+    // an estimate shown before committing to a download, not exact.
+    const AVG_TILE_BYTES = { 'Trails & land data': 9000, '3D terrain': 18000 };
+
+    function estimateRegionDownload(bbox, archives, minZoom = OFFLINE_MIN_ZOOM, maxZoom = OFFLINE_MAX_ZOOM) {
+      const tiles = tileCountForBbox(bbox, minZoom, maxZoom);
+      const bytes = archives.reduce((sum, a) => sum + tiles * (AVG_TILE_BYTES[a.label] || 12000), 0);
+      return { tiles: tiles * archives.length, bytes };
+    }
+
+    // Runs `worker` over `jobs` with at most `limit` in flight at once —
+    // downloading thousands of small tiles one at a time would be needlessly
+    // slow, but no reason to hammer the bucket with unlimited parallel
+    // requests either.
+    async function runWithConcurrency(jobs, limit, worker) {
+      let index = 0;
+      async function lane() {
+        while (index < jobs.length) {
+          const i = index++;
+          await worker(jobs[i], i);
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, lane));
+    }
+
+    // Downloads every tile covering bbox (at minZoom..maxZoom, for each
+    // given archive) and stores it in IndexedDB, then records a named
+    // region so it can be listed/deleted as a unit later. Skips tiles
+    // that don't exist in the archive (getZxy returns undefined for
+    // those — e.g. water/blank areas at some zooms) without error; only
+    // real fetch failures get logged and skipped.
+    async function downloadRegionForOffline({ name, bbox, archives, minZoom = OFFLINE_MIN_ZOOM, maxZoom = OFFLINE_MAX_ZOOM }, onProgress) {
+      const jobs = [];
+      for (const archive of archives) {
+        for (let z = minZoom; z <= maxZoom; z++) {
+          const r = tileRangeForBbox(bbox, z);
+          for (let x = r.xMin; x <= r.xMax; x++) {
+            for (let y = r.yMin; y <= r.yMax; y++) {
+              jobs.push({ archive, z, x, y });
+            }
+          }
+        }
+      }
+
       if (navigator.storage && navigator.storage.persist) {
         try { await navigator.storage.persist(); } catch { /* best-effort */ }
       }
-      await putOfflineArchive(archive.url, { blob, size: blob.size, savedAt: new Date().toISOString() });
-      return blob;
-    }
 
-    // Registers whichever archives already have an offline copy, before
-    // the map is created — see the big comment above for why this is
-    // enough to make MapLibre read from local storage with zero code
-    // changes anywhere else in the app.
-    async function registerOfflineSources(protocol, archives) {
-      for (const archive of archives) {
+      let done = 0;
+      let bytes = 0;
+      let failed = 0;
+      await runWithConcurrency(jobs, 6, async (job) => {
         try {
-          const stored = await getOfflineArchive(archive.url);
-          if (stored && stored.blob) {
-            protocol.add(new pmtiles.PMTiles(new OfflineBlobSource(archive.url, stored.blob)));
+          let instance = protocol.get(job.archive.url);
+          if (!instance) {
+            instance = new pmtiles.PMTiles(job.archive.url);
+            protocol.add(instance);
+          }
+          const result = await instance.getZxy(job.z, job.x, job.y);
+          if (result && result.data) {
+            await putTile(job.archive.url, job.z, job.x, job.y, result.data);
+            bytes += result.data.byteLength || result.data.length || 0;
           }
         } catch (err) {
-          console.warn('Offline archive lookup failed', archive.url, err);
+          failed++;
+          console.warn('Offline tile fetch failed, skipping', job.archive.url, job.z, job.x, job.y, err);
+        }
+        done++;
+        if (onProgress) onProgress(done, jobs.length, bytes);
+      });
+
+      const record = {
+        name,
+        bbox,
+        archiveUrls: archives.map((a) => a.url),
+        minZoom,
+        maxZoom,
+        tileCount: jobs.length,
+        failedCount: failed,
+        bytes,
+        savedAt: new Date().toISOString(),
+      };
+      const id = `region-${Date.now()}`;
+      await idbPut(REGIONS_STORE, id, record);
+      return { id, ...record };
+    }
+
+    async function deleteOfflineRegion(id) {
+      const record = await idbGet(REGIONS_STORE, id);
+      if (!record) return;
+      const jobs = [];
+      for (const archiveUrl of record.archiveUrls) {
+        for (let z = record.minZoom; z <= record.maxZoom; z++) {
+          const r = tileRangeForBbox(record.bbox, z);
+          for (let x = r.xMin; x <= r.xMax; x++) {
+            for (let y = r.yMin; y <= r.yMax; y++) {
+              jobs.push([archiveUrl, z, x, y]);
+            }
+          }
         }
       }
+      // Note: if two downloaded regions overlap, this can delete tiles the
+      // other region also relies on — acceptable for a personal, single-
+      // profile offline cache; not attempting cross-region reference
+      // counting here.
+      await runWithConcurrency(jobs, 8, ([archiveUrl, z, x, y]) => deleteTile(archiveUrl, z, x, y));
+      await idbDelete(REGIONS_STORE, id);
+    }
+
+    async function listOfflineRegions() {
+      const entries = await idbGetAll(REGIONS_STORE);
+      return entries.map(([id, record]) => ({ id, ...record })).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
     }
 
     const protocol = new pmtiles.Protocol();
-    maplibregl.addProtocol('pmtiles', protocol.tile);
+    // Every pmtiles:// tile request checks the offline cache first; a
+    // miss (nothing downloaded for that tile) falls straight through to
+    // the normal network-backed handler exactly as before.
+    async function offlineAwarePmtilesHandler(params, abortController) {
+      if (params.type !== 'json') {
+        const match = /^pmtiles:\/\/(.+)\/(\d+)\/(\d+)\/(\d+)$/.exec(params.url);
+        if (match) {
+          const [, archiveUrl, z, x, y] = match;
+          try {
+            const cached = await getTile(archiveUrl, +z, +x, +y);
+            if (cached) return { data: cached.data };
+          } catch (err) {
+            console.warn('Offline tile lookup failed, falling back to network', err);
+          }
+        }
+      }
+      return protocol.tile(params, abortController);
+    }
+    maplibregl.addProtocol('pmtiles', offlineAwarePmtilesHandler);
 
     async function start() {
       const [style, manifest] = await Promise.all([
@@ -984,12 +1121,11 @@
         ? [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
         : [-111.5, 39.5];
 
-      // Register any already-downloaded offline archives before the map
-      // is created, so its very first tile requests already resolve
-      // locally — see registerOfflineSources above for why this is safe
-      // to always attempt (a no-op when nothing's been downloaded).
+      // Archives this style references — offlineAwarePmtilesHandler checks
+      // IndexedDB per-tile on every request, so nothing needs to be
+      // pre-registered here; this is just the list buildOfflinePanel etc.
+      // use to know what's downloadable.
       const offlineArchives = extractPmtilesArchives(style);
-      await registerOfflineSources(protocol, offlineArchives);
 
       const map = new maplibregl.Map({
         container: 'map',
@@ -1706,6 +1842,23 @@
       }
       findCampSpotNearFn = findCampSpotNear; // exposes it to the card-builder functions defined at top level
 
+      // Same bridge pattern as findCampSpotNearFn above — lets the
+      // "Download this area" button on trail/spot cards (built at top
+      // level) reach the region-downloader defined inside start().
+      async function downloadAreaAround(bbox, name) {
+        const est = estimateRegionDownload(bbox, offlineArchives);
+        say(`Downloading ${name}… ~${formatBytes(est.bytes)}`, 'warn');
+        try {
+          await downloadRegionForOffline({ name, bbox, archives: offlineArchives }, (done, total) => {
+            if (done === total || done % 40 === 0) say(`Downloading ${name}… ${done}/${total} tiles`, 'warn');
+          });
+          say(`${name} saved for offline use`);
+        } catch (err) {
+          say(`Download failed: ${err.message}`, 'error');
+        }
+      }
+      downloadAreaAroundFn = downloadAreaAround;
+
       // ---- Search: find a named peak/trail/landmark or a recommended
       // camp spot by name, then jump straight there. Three real sources,
       // each with a real gap that's stated honestly rather than papered
@@ -2103,6 +2256,7 @@
             coordinates: feature.geometry.coordinates,
             source: 'scanned',
           });
+          appendDownloadAreaButton(body, feature.geometry, 'Scanned Camp Spot', SPOT_BUFFER_DEG);
         }, feature.geometry.coordinates);
       }
 
@@ -2112,6 +2266,7 @@
         openInfoCard('Saved Spot', props.label || 'Saved Camp Spot', (body) => {
           body.append(paragraph('Saved on this device only — not part of the verified dataset, not shared with anyone else.', 'info-desc'));
           appendUnsaveButton(body, props.id);
+          appendDownloadAreaButton(body, feature.geometry, props.label || 'Saved Camp Spot', SPOT_BUFFER_DEG);
         }, feature.geometry.coordinates);
       }
 
@@ -2218,7 +2373,7 @@
         const regions = await loadAvailableRegions(manifest);
         addRegionCoverage(map, regions);
         buildRegionsPanel(map, regions);
-        buildOfflinePanel(offlineArchives);
+        buildOfflinePanel(map, offlineArchives);
         initSearch();
       });
     }
@@ -2413,6 +2568,40 @@
       btn.className = 'panel-btn secondary';
       btn.textContent = 'Find a camp spot near here';
       btn.onclick = () => findCampSpotNearFn && findCampSpotNearFn(coords, label);
+      body.append(btn);
+    }
+
+    function boundsOfCoordinates(coords) {
+      let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+      for (const [lng, lat] of coords) {
+        if (lng < w) w = lng;
+        if (lng > e) e = lng;
+        if (lat < s) s = lat;
+        if (lat > n) n = lat;
+      }
+      return [w, s, e, n];
+    }
+    // A trail's own extent already covers its length, so it only needs a
+    // narrow margin around the line; a point spot needs a real radius of
+    // surrounding area to be useful to explore around.
+    const TRAIL_BUFFER_DEG = 0.015; // ~1 mi
+    const SPOT_BUFFER_DEG = 0.045; // ~3 mi
+    function bboxForGeometry(geometry, bufferDegrees) {
+      let bounds;
+      if (geometry.type === 'LineString') bounds = boundsOfCoordinates(geometry.coordinates);
+      else if (geometry.type === 'Point') { const [lng, lat] = geometry.coordinates; bounds = [lng, lat, lng, lat]; }
+      else return null;
+      const [w, s, e, n] = bounds;
+      return [w - bufferDegrees, s - bufferDegrees, e + bufferDegrees, n + bufferDegrees];
+    }
+    function appendDownloadAreaButton(body, geometry, name, bufferDegrees) {
+      const bbox = bboxForGeometry(geometry, bufferDegrees);
+      if (!bbox) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'panel-btn secondary';
+      btn.textContent = 'Download this area for offline';
+      btn.onclick = () => downloadAreaAroundFn && downloadAreaAroundFn(bbox, name);
       body.append(btn);
     }
 
@@ -2614,6 +2803,7 @@
     let mapRef = null;
     let gemSpotsRef = null; // { layerId, loaded } from addGemSpotsLayer
     let findCampSpotNearFn = null; // set inside start() once the map/scanner exist; used by card buttons defined at top level
+    let downloadAreaAroundFn = null; // same pattern, for the "Download this area" button below
     let lastScanContextTextRef = ''; // mirrors runCampScan's lastScanContextText — initAIGuide() lives outside start(), so it reads this instead
 
     // Reuses aiBtn's own click handler (wired up in initAIGuide) rather
@@ -2679,6 +2869,7 @@
         ].forEach((row) => row && facts.append(row));
         body.append(facts);
         appendFindSpotButton(body, centroidOf(feature.geometry), name);
+        appendDownloadAreaButton(body, feature.geometry, name, TRAIL_BUFFER_DEG);
       }, centroidOf(feature.geometry));
     }
 
@@ -2724,6 +2915,7 @@
         const link = externalLink(props.recareaurl, 'Official page ↗');
         if (link) body.append(link);
         appendFindSpotButton(body, centroidOf(feature.geometry), name);
+        appendDownloadAreaButton(body, feature.geometry, name, SPOT_BUFFER_DEG);
       }, centroidOf(feature.geometry));
     }
 
@@ -2878,7 +3070,7 @@
       });
     }
 
-    async function buildOfflinePanel(archives) {
+    async function buildOfflinePanel(map, archives) {
       const container = document.getElementById('offline-body');
       container.innerHTML = '';
       if (!archives.length) return;
@@ -2890,103 +3082,105 @@
       wrap.append(heading);
       const note = document.createElement('p');
       note.className = 'group-note';
-      note.textContent = 'Download once and the map keeps working with no signal — including live location tracking, once it has a fix. Trail & land data is the essential piece; 3D terrain is optional and much larger.';
+      note.textContent = 'Download the area you\'re exploring and it keeps working with no signal there — including live location tracking, once it has a fix. Trail and spot cards have their own "Download this area" button too, for just that one place instead of your whole current view.';
       wrap.append(note);
 
-      for (const archive of archives) {
-        wrap.append(await buildOfflineRow(archive));
+      const downloadRow = document.createElement('div');
+      downloadRow.className = 'offline-row';
+      const downloadInfo = document.createElement('div');
+      downloadInfo.className = 'offline-info';
+      const downloadLabel = document.createElement('div');
+      downloadLabel.className = 'offline-label';
+      downloadLabel.textContent = 'This area';
+      const downloadMeta = document.createElement('div');
+      downloadMeta.className = 'offline-meta';
+      downloadMeta.textContent = "Whatever's on screen right now";
+      downloadInfo.append(downloadLabel, downloadMeta);
+      const downloadBtn = document.createElement('button');
+      downloadBtn.type = 'button';
+      downloadBtn.className = 'offline-action';
+      downloadBtn.textContent = 'Estimate';
+      downloadRow.append(downloadInfo, downloadBtn);
+      wrap.append(downloadRow);
+
+      const listWrap = document.createElement('div');
+
+      async function refreshDownloadedList() {
+        listWrap.innerHTML = '';
+        const regions = await listOfflineRegions();
+        if (!regions.length) return;
+        const sub = document.createElement('p');
+        sub.className = 'group-note';
+        sub.style.marginTop = '10px';
+        sub.textContent = 'Downloaded';
+        listWrap.append(sub);
+        for (const region of regions) {
+          listWrap.append(buildOfflineRegionRow(region, refreshDownloadedList));
+        }
       }
+
+      // Two-tap by design: the first tap only estimates size (cheap, pure
+      // math against the current view) so nobody starts a large download
+      // by accident; the second actually runs it.
+      let pendingBbox = null;
+      downloadBtn.onclick = async () => {
+        if (!pendingBbox) {
+          const b = map.getBounds();
+          pendingBbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+          const est = estimateRegionDownload(pendingBbox, archives);
+          downloadMeta.textContent = `~${formatBytes(est.bytes)} · ${est.tiles.toLocaleString()} tiles`;
+          downloadBtn.textContent = 'Start Download';
+          return;
+        }
+        const bbox = pendingBbox;
+        pendingBbox = null;
+        downloadBtn.disabled = true;
+        try {
+          await downloadRegionForOffline({
+            name: `This area — ${new Date().toLocaleDateString()}`,
+            bbox,
+            archives,
+          }, (done, total, bytes) => {
+            downloadMeta.textContent = `Downloading… ${done}/${total} tiles (${formatBytes(bytes)})`;
+          });
+          say('Area saved for offline use');
+        } catch (err) {
+          say(`Download failed: ${err.message}`, 'error');
+        }
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = 'Estimate';
+        downloadMeta.textContent = "Whatever's on screen right now";
+        await refreshDownloadedList();
+      };
+
+      await refreshDownloadedList();
+      wrap.append(listWrap);
       container.append(wrap);
     }
 
-    async function buildOfflineRow(archive) {
+    function buildOfflineRegionRow(region, onDeleted) {
       const row = document.createElement('div');
       row.className = 'offline-row';
-
       const info = document.createElement('div');
       info.className = 'offline-info';
       const label = document.createElement('div');
       label.className = 'offline-label';
-      label.textContent = archive.label;
+      label.textContent = region.name;
       const meta = document.createElement('div');
       meta.className = 'offline-meta';
-      meta.textContent = 'Checking…';
+      meta.textContent = `${formatBytes(region.bytes)} · saved ${new Date(region.savedAt).toLocaleDateString()}`;
       info.append(label, meta);
-
       const action = document.createElement('button');
       action.type = 'button';
-      action.className = 'offline-action';
-      action.textContent = '…';
-      action.disabled = true;
-
-      row.append(info, action);
-
-      // Best-effort size preview — a HEAD request, not the actual
-      // download, so this is safe/cheap to do for every row up front.
-      let remoteSize = 0;
-      try {
-        const head = await fetch(archive.url, { method: 'HEAD' });
-        remoteSize = Number(head.headers.get('Content-Length')) || 0;
-      } catch { /* no size preview, not fatal */ }
-
-      async function refresh() {
-        const stored = await getOfflineArchive(archive.url).catch(() => null);
-        if (stored) {
-          meta.textContent = `${formatBytes(stored.size)} · saved ${new Date(stored.savedAt).toLocaleDateString()}`;
-          action.textContent = 'Delete';
-          action.classList.add('danger');
-        } else {
-          meta.textContent = remoteSize ? `~${formatBytes(remoteSize)} · not downloaded` : 'Not downloaded';
-          action.textContent = 'Download';
-          action.classList.remove('danger');
-        }
-        action.disabled = false;
-      }
-
+      action.className = 'offline-action danger';
+      action.textContent = 'Delete';
       action.onclick = async () => {
-        const stored = await getOfflineArchive(archive.url).catch(() => null);
         action.disabled = true;
-        if (stored) {
-          action.textContent = 'Deleting…';
-          await deleteOfflineArchive(archive.url);
-          // Stop serving this session's tiles from the copy that's now
-          // gone — Protocol has no public unregister, but this.tiles is
-          // a plain Map, so removing the entry is safe and falls back to
-          // normal FetchSource on the next request for this URL.
-          protocol.tiles.delete(archive.url);
-          await refresh();
-          return;
-        }
-        try {
-          await downloadArchiveForOffline(archive, (received, total) => {
-            meta.textContent = total
-              ? `Downloading… ${formatBytes(received)} / ${formatBytes(total)} (${Math.round((received / total) * 100)}%)`
-              : `Downloading… ${formatBytes(received)}`;
-          });
-          say(`${archive.label} saved for offline use`);
-        } catch (err) {
-          say(`Download failed: ${err.message}`, 'error');
-          await refresh();
-          return;
-        }
-        // Usable for the rest of this session immediately, not just after
-        // a reload — see registerOfflineSources for why this one extra
-        // protocol.add() call is all that's needed. Kept out of the try
-        // above and never surfaced as an error: the download itself
-        // already succeeded and is safely on disk by this point, so a
-        // problem here shouldn't read to the user as "your download
-        // failed" — worst case, it behaves like offline wasn't set up
-        // for this session until the next reload.
-        try {
-          const fresh = await getOfflineArchive(archive.url);
-          if (fresh) protocol.add(new pmtiles.PMTiles(new OfflineBlobSource(archive.url, fresh.blob)));
-        } catch (err) {
-          console.warn('Could not register offline source for this session', err);
-        }
-        await refresh();
+        action.textContent = 'Deleting…';
+        await deleteOfflineRegion(region.id);
+        await onDeleted();
       };
-
-      await refresh();
+      row.append(info, action);
       return row;
     }
 
@@ -3163,25 +3357,32 @@
       });
 
       const loaded = (async () => {
+        // Not part of the pmtiles archives (a separate Supabase-hosted
+        // dataset), so it needs its own small offline cache — this is a
+        // few hundred rows of JSON, cheap to keep a full copy of rather
+        // than trying to scope it to a downloaded region.
+        let rows;
         try {
           const resp = await fetch(GEM_SPOTS_URL, {
             headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
           });
           if (!resp.ok) throw new Error(`Supabase fetch failed: ${resp.status}`);
-          const rows = await resp.json();
-          map.getSource(sourceId).setData({
-            type: 'FeatureCollection',
-            features: rows.map((row) => ({
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: [row.lon, row.lat] },
-              properties: row,
-            })),
-          });
-          return rows.length;
+          rows = await resp.json();
+          idbPut(MISC_STORE, 'gem-spots', rows).catch((err) => console.warn('Could not cache recommended spots for offline use', err));
         } catch (err) {
-          console.warn('Could not load recommended spots', err);
-          return 0;
+          console.warn('Could not load recommended spots live, trying offline cache', err);
+          rows = await idbGet(MISC_STORE, 'gem-spots').catch(() => null);
         }
+        if (!rows) return 0;
+        map.getSource(sourceId).setData({
+          type: 'FeatureCollection',
+          features: rows.map((row) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [row.lon, row.lat] },
+            properties: row,
+          })),
+        });
+        return rows.length;
       })();
 
       return { layerId, loaded };
