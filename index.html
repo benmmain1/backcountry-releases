@@ -219,27 +219,32 @@
   }
 
   /* ---- Layers panel content ---- */
-  #layers-sheet .group { padding: 14px 0; border-top: 1px solid var(--border); }
-  #layers-sheet .group:first-child { border-top: none; padding-top: 4px; }
-  #layers-sheet .group h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
-  #layers-sheet .row { display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer; }
+  /* Also applies to #quick-scan-sheet ("What are you looking for?"),
+     which renders the same View-type/Camp-type switch rows via the
+     shared renderScanPrefSwitches — same createSwitchRow markup
+     (.row/.switch/.label), so it needs the same rules rather than a
+     second, easy-to-drift copy. */
+  #layers-sheet .group, #quick-scan-sheet .group { padding: 14px 0; border-top: 1px solid var(--border); }
+  #layers-sheet .group:first-child, #quick-scan-sheet .group:first-child { border-top: none; padding-top: 4px; }
+  #layers-sheet .group h2, #quick-scan-sheet .group h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+  #layers-sheet .row, #quick-scan-sheet .row { display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer; }
   /* iOS/Android-style toggle switch, shared by map-layer toggles and the
      Scan Preferences checkboxes appended into this same panel — a switch
      reads as "this is on", a checkbox reads as a form control. */
-  #layers-sheet .switch { position: relative; width: 38px; height: 22px; flex: none; }
-  #layers-sheet .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-  #layers-sheet .switch .track { position: absolute; inset: 0; background: var(--border); border-radius: 999px; transition: background .15s ease; }
-  #layers-sheet .switch .thumb {
+  #layers-sheet .switch, #quick-scan-sheet .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  #layers-sheet .switch input, #quick-scan-sheet .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  #layers-sheet .switch .track, #quick-scan-sheet .switch .track { position: absolute; inset: 0; background: var(--border); border-radius: 999px; transition: background .15s ease; }
+  #layers-sheet .switch .thumb, #quick-scan-sheet .switch .thumb {
     position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
     background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s ease;
   }
-  #layers-sheet .switch input:checked ~ .track { background: var(--accent); }
-  #layers-sheet .switch input:checked ~ .track .thumb { transform: translateX(16px); }
-  #layers-sheet .swatch { width: 13px; height: 13px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
-  #layers-sheet .swatch.line { border-radius: 2px; height: 4px; align-self: center; }
-  #layers-sheet .label { font-size: 14px; flex: 1; }
-  #layers-sheet .note { font-size: 12px; color: var(--muted); margin: -2px 0 8px; }
-  #layers-sheet .group-note { font-size: 12px; color: var(--muted); margin: -2px 0 6px; font-style: italic; }
+  #layers-sheet .switch input:checked ~ .track, #quick-scan-sheet .switch input:checked ~ .track { background: var(--accent); }
+  #layers-sheet .switch input:checked ~ .track .thumb, #quick-scan-sheet .switch input:checked ~ .track .thumb { transform: translateX(16px); }
+  #layers-sheet .swatch, #quick-scan-sheet .swatch { width: 13px; height: 13px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+  #layers-sheet .swatch.line, #quick-scan-sheet .swatch.line { border-radius: 2px; height: 4px; align-self: center; }
+  #layers-sheet .label, #quick-scan-sheet .label { font-size: 14px; flex: 1; }
+  #layers-sheet .note, #quick-scan-sheet .note { font-size: 12px; color: var(--muted); margin: -2px 0 8px; }
+  #layers-sheet .group-note, #quick-scan-sheet .group-note { font-size: 12px; color: var(--muted); margin: -2px 0 6px; font-style: italic; }
 
   /* ---- Regions list: jump straight to a region, no hunting on the map ---- */
   #regions-body .region-row {
@@ -665,6 +670,25 @@
     </button>
   </div>
 
+  <!-- Shown on top of "Find a camp spot near here" (see openQuickScanPrefs)
+       instead of scanning immediately with whatever Scan Preferences
+       happened to already be set (almost always none, since most people
+       never separately visit Layers first) — asks the same View-type/Camp-
+       type questions inline, right where someone's actually looking for a
+       spot. Rebuilt fresh into #quick-scan-body every time it opens. -->
+  <div id="quick-scan-sheet" class="sheet">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <h1>What are you looking for?</h1>
+      <button type="button" class="sheet-close" data-close title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p class="group-note">Pick anything that matters for this search — the scan looks for spots matching them, using real terrain shape plus government tree-canopy/water data. Leave everything unchecked for a general flat-and-open search.</p>
+    <div id="quick-scan-body"></div>
+    <button id="quick-scan-confirm-btn" type="button" class="panel-btn">Find Camp Spots</button>
+  </div>
+
   <div id="regions-sheet" class="sheet">
     <div class="grabber"></div>
     <div class="sheet-head">
@@ -852,6 +876,7 @@
     const locateBtn = document.getElementById('locate-btn');
     const aboutSheet = document.getElementById('about-sheet');
     const layersSheet = document.getElementById('layers-sheet');
+    const quickScanSheet = document.getElementById('quick-scan-sheet');
     const regionsSheet = document.getElementById('regions-sheet');
     const searchSheet = document.getElementById('search-sheet');
     const infoSheet = document.getElementById('info-sheet');
@@ -874,6 +899,7 @@
       clearPendingPinFn?.(); // removes a dropped-but-unsaved pin's temp marker whenever any sheet closes/switches
       aboutSheet.classList.remove('open');
       layersSheet.classList.remove('open');
+      quickScanSheet.classList.remove('open');
       regionsSheet.classList.remove('open');
       searchSheet.classList.remove('open');
       infoSheet.classList.remove('open');
@@ -2125,7 +2151,7 @@
         map.flyTo({ center: [chosen.lng, chosen.lat], zoom: Math.max(map.getZoom(), 14), duration: 900 });
         return true;
       }
-      highlightScanIdFn = highlightScanId; // exposes it to initAIGuide(), same bridge pattern as findCampSpotNearFn above
+      highlightScanIdFn = highlightScanId; // exposes it to initAIGuide(), same bridge pattern as openQuickScanPrefsFn below
 
       scanBtn.onclick = async () => {
         if (!terrainOn) {
@@ -2184,7 +2210,37 @@
         }
         return found;
       }
-      findCampSpotNearFn = findCampSpotNear; // exposes it to the card-builder functions defined at top level
+
+      // "Find a camp spot near here" used to call findCampSpotNear
+      // directly, scanning immediately with whatever Scan Preferences
+      // happened to already be set (almost always none) — this interstitial
+      // asks the same View-type/Camp-type questions the Layers panel does,
+      // rebuilt fresh into #quick-scan-body every time (so it reflects
+      // whatever's currently set in spotFilterState, per
+      // renderScanPrefSwitches), then runs the exact same
+      // findCampSpotNear on confirm. No changes to findCampSpotNear,
+      // runCampScan, or the AI tool path — this only adds a step in front
+      // of one entry point.
+      const quickScanBody = document.getElementById('quick-scan-body');
+      const quickScanConfirmBtn = document.getElementById('quick-scan-confirm-btn');
+      function openQuickScanPrefs(coords, label) {
+        closeSheets();
+        quickScanBody.innerHTML = '';
+        // Checkboxes from a previous open of this same sheet are now
+        // detached from the document — drop them from scanPrefToggles so
+        // setScanPref isn't still touching stale, invisible elements on
+        // every future preference change.
+        for (const key in scanPrefToggles) {
+          scanPrefToggles[key] = scanPrefToggles[key].filter((el) => el.isConnected);
+        }
+        renderScanPrefSwitches(quickScanBody);
+        quickScanConfirmBtn.onclick = () => {
+          closeSheets();
+          findCampSpotNear(coords, label);
+        };
+        toggleSheet(quickScanSheet, null);
+      }
+      openQuickScanPrefsFn = openQuickScanPrefs; // exposes it to appendFindSpotButton, defined at top level
 
       // Executes the AI Guide's run_camp_scan tool call. Deliberately does
       // NOT reimplement any scanning logic of its own — it sets the same
@@ -2241,9 +2297,9 @@
         }
         return `Scan complete — real candidates below (recommend exactly one, citing its scan_id per the system prompt's citation rule):\n${lastScanContextText}`;
       }
-      executeAiScanToolFn = executeAiScanTool; // exposes it to initAIGuide(), same bridge pattern as findCampSpotNearFn above
+      executeAiScanToolFn = executeAiScanTool; // exposes it to initAIGuide(), same bridge pattern as openQuickScanPrefsFn above
 
-      // Same bridge pattern as findCampSpotNearFn above — lets the
+      // Same bridge pattern as openQuickScanPrefsFn above — lets the
       // "Download this area" button on trail/spot cards (built at top
       // level) reach the region-downloader defined inside start().
       async function downloadAreaAround(bbox, name) {
@@ -2518,21 +2574,60 @@
       // What the scanner searches for — set directly by the preference
       // checkboxes, read live by scanForCampSpots() each time it runs.
       const spotFilterState = { view: new Set(), camp: new Set() };
-      // Checkbox inputs built by buildScanPreferencesPanel, keyed
-      // "group:key" — populated once the panel exists (Layers sheet has
-      // been opened at least once isn't required; buildScanPreferencesPanel
-      // runs during start()). setScanPref is the single place that flips
-      // both the Set state and the visible switch, so the AI Guide's
-      // run_camp_scan tool (see executeAiScanToolFn) can set preferences
-      // the same way a human tapping a switch would — the panel visibly
-      // reflects what the AI understood, instead of state changing invisibly
-      // behind it.
+      // Checkbox inputs built by renderScanPrefSwitches, keyed "group:key"
+      // — an ARRAY per key because the same preference now has more than
+      // one on-screen checkbox (the Layers "Scan Preferences" panel and
+      // the "What are you looking for?" quick-scan sheet both render from
+      // SCAN_PREF_DEFS), and both need to stay in sync with whichever one
+      // the user actually touched. setScanPref is the single place that
+      // flips both the Set state and every registered switch, so the AI
+      // Guide's run_camp_scan tool (see executeAiScanToolFn) can set
+      // preferences the same way a human tapping a switch would — every
+      // panel visibly reflects what got set, instead of state changing
+      // invisibly behind it.
       const scanPrefToggles = {};
       function setScanPref(group, key, value) {
         const set = spotFilterState[group];
         if (value) set.add(key); else set.delete(key);
-        const toggle = scanPrefToggles[`${group}:${key}`];
-        if (toggle) toggle.checked = value;
+        for (const toggle of scanPrefToggles[`${group}:${key}`] || []) toggle.checked = value;
+      }
+
+      const SCAN_PREF_DEFS = [
+        { group: 'view', key: 'openValley', label: 'Open valley view' },
+        { group: 'view', key: 'panoramic', label: 'Panoramic (360°)' },
+        { group: 'view', key: 'waterView', label: 'Near water' },
+        { group: 'view', key: 'wooded', label: 'Wooded / shaded' },
+        { group: 'camp', key: 'tentOk', label: 'Tent-friendly' },
+        { group: 'camp', key: 'hammockOk', label: 'Hammock-friendly (has trees)' },
+        { group: 'camp', key: 'trailerOk', label: 'Trailer / RV-friendly (large pad)' },
+      ];
+      // Renders the View-type/Camp-type switch rows into `container` —
+      // shared by the Layers "Scan Preferences" panel (built once) and the
+      // "What are you looking for?" quick-scan sheet (rebuilt fresh every
+      // time it opens, see openQuickScanPrefs), so there's one definition
+      // of the preference list and one place that builds its rows. Reads
+      // each switch's initial checked state from spotFilterState — not
+      // hardcoded false — so a panel built after preferences were already
+      // set somewhere else reflects that instead of resetting to unchecked.
+      function renderScanPrefSwitches(container) {
+        for (const groupName of ['view', 'camp']) {
+          const sub = document.createElement('p');
+          sub.className = 'group-note';
+          sub.style.marginTop = groupName === 'camp' ? '10px' : '6px';
+          sub.textContent = groupName === 'view' ? 'View type' : 'Camp type';
+          container.append(sub);
+          for (const def of SCAN_PREF_DEFS.filter((d) => d.group === groupName)) {
+            const row = createSwitchRow({
+              label: def.label,
+              checked: spotFilterState[def.group].has(def.key),
+              onChange: (isChecked) => setScanPref(def.group, def.key, isChecked),
+            });
+            const key = `${def.group}:${def.key}`;
+            if (!scanPrefToggles[key]) scanPrefToggles[key] = [];
+            scanPrefToggles[key].push(row.querySelector('input[type="checkbox"]'));
+            container.append(row);
+          }
+        }
       }
 
       // Personal, on-device saved spots. There's no live backend here to
@@ -3411,32 +3506,7 @@
         note.textContent = 'What the star-button scanner searches for — check any of these and the next scan looks for spots matching them, using real terrain shape plus government tree-canopy/water data. Leave everything unchecked for a general flat-and-open search.';
         wrap.append(note);
 
-        const filterDefs = [
-          { group: 'view', key: 'openValley', label: 'Open valley view' },
-          { group: 'view', key: 'panoramic', label: 'Panoramic (360°)' },
-          { group: 'view', key: 'waterView', label: 'Near water' },
-          { group: 'view', key: 'wooded', label: 'Wooded / shaded' },
-          { group: 'camp', key: 'tentOk', label: 'Tent-friendly' },
-          { group: 'camp', key: 'hammockOk', label: 'Hammock-friendly (has trees)' },
-          { group: 'camp', key: 'trailerOk', label: 'Trailer / RV-friendly (large pad)' },
-        ];
-        for (const groupName of ['view', 'camp']) {
-          const sub = document.createElement('p');
-          sub.className = 'group-note';
-          sub.style.marginTop = groupName === 'camp' ? '10px' : '6px';
-          sub.textContent = groupName === 'view' ? 'View type' : 'Camp type';
-          wrap.append(sub);
-          for (const def of filterDefs.filter((d) => d.group === groupName)) {
-            const row = createSwitchRow({
-              label: def.label,
-              checked: false,
-              onChange: (isChecked) => setScanPref(def.group, def.key, isChecked),
-            });
-            scanPrefToggles[`${def.group}:${def.key}`] = row.querySelector('input[type="checkbox"]');
-            wrap.append(row);
-          }
-        }
-
+        renderScanPrefSwitches(wrap);
         body.append(wrap);
       }
 
@@ -3723,16 +3793,20 @@
     // Dropped onto any card with real coordinates — trail, rec site,
     // recommended spot, or a searched peak/place — so "camp near this"
     // is always one tap away from wherever the user actually is, not
-    // just from the star-button/scan flow. findCampSpotNearFn is set once
-    // start() has the map+scanner ready (see findCampSpotNear); before
-    // that (a card opened mid-load, in practice never reachable by a
-    // real tap) it's a no-op rather than throwing.
+    // just from the star-button/scan flow. Opens the "What are you
+    // looking for?" quick-scan sheet first (see openQuickScanPrefs) rather
+    // than scanning immediately, so this entry point asks the same
+    // View-type/Camp-type questions the Layers panel does instead of
+    // silently scanning with whatever (usually no) preferences happen to
+    // already be set. openQuickScanPrefsFn is set once start() has the
+    // map/scanner ready; before that (a card opened mid-load, in practice
+    // never reachable by a real tap) it's a no-op rather than throwing.
     function appendFindSpotButton(body, coords, label) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'panel-btn secondary';
       btn.textContent = 'Find a camp spot near here';
-      btn.onclick = () => findCampSpotNearFn && findCampSpotNearFn(coords, label);
+      btn.onclick = () => openQuickScanPrefsFn && openQuickScanPrefsFn(coords, label);
       body.append(btn);
     }
 
@@ -3770,7 +3844,7 @@
 
     // Set inside start() once the map/routing graph builder exist; used by
     // card buttons defined at top level (same ref pattern as
-    // findCampSpotNearFn/downloadAreaAroundFn).
+    // openQuickScanPrefsFn/downloadAreaAroundFn).
     let routeToFn = null;
     function appendRouteButton(body, coords, label) {
       const btn = document.createElement('button');
@@ -4008,7 +4082,7 @@
     // fetch racing or failing separately from the one that put it on the
     // map.
     let gemSpotRows = [];
-    let findCampSpotNearFn = null; // set inside start() once the map/scanner exist; used by card buttons defined at top level
+    let openQuickScanPrefsFn = null; // set inside start() once the map/scanner exist; used by appendFindSpotButton's card button
     let downloadAreaAroundFn = null; // same pattern, for the "Download this area" button below
     let executeAiScanToolFn = null; // same pattern, for the AI Guide's run_camp_scan tool call (initAIGuide() lives outside start(), like the card builders above)
     let highlightScanIdFn = null; // same pattern, for flying to/emphasizing whichever scanned pin the AI Guide recommends
