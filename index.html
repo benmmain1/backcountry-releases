@@ -1880,13 +1880,8 @@
           scanResultsShown = true;
           scanBtn.textContent = 'Clear Results';
           say(results.length
-            ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping. Opening the best pick, tap any other pin for details.`
+            ? `Found ${results.length} candidate spot${results.length === 1 ? '' : 's'} — computed from terrain shape, not verified; check current local rules before camping. The gold ★ pin is the best pick; tap it (or any other pin) for details.`
             : 'No candidates matched in this view — try loosening your Scan Preferences, pan over USFS/BLM land near a dispersed-camping route, or ask the AI Trail Guide (if set up) what to try next');
-          // Surface the top pick right away — a marker plus a plain-
-          // language reason it's ranked first, with the same Save button
-          // every scan candidate card already has — instead of making the
-          // user hunt for which of several dots is actually the best one.
-          if (features.length) showScanResultCard(features[0]);
 
           lastScanContextText = results.length
             ? 'scan_id|elevation_ft|open_view_ft|wooded(Y/N)|near_water(Y/N)|lat,lon\n' + results.map((c) => {
