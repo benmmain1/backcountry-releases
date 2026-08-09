@@ -123,7 +123,7 @@
   }
   .nav-item {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-    min-width: 56px; padding: 7px 10px; border: none; cursor: pointer;
+    min-width: 50px; padding: 7px 8px; border: none; cursor: pointer;
     background: none; border-radius: 999px; color: rgba(255,255,255,.75);
     font-size: 10px; font-weight: 700; letter-spacing: .01em;
     transition: background .15s ease, color .15s ease;
@@ -295,6 +295,32 @@
   #search-results .empty, #search-results .loading { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
   #search-results .group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; margin: 12px 0 2px; }
   #search-results .group-label:first-child { margin-top: 4px; }
+
+  /* ---- Saved Spots grid: on-device bookmarked spots, card style with a
+     picture (real photo when saved from a curated spot, otherwise a
+     satellite crop of that exact coordinate) and the name/kind overlaid
+     at the bottom, closer to a "discover feed" than the plain list rows
+     used elsewhere in this app. ---- */
+  #saved-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 2px 0 4px; }
+  .saved-card {
+    position: relative; display: block; border: none; padding: 0; margin: 0;
+    border-radius: 14px; overflow: hidden; cursor: pointer; text-align: left; color: inherit;
+    aspect-ratio: 3 / 4; background: var(--border);
+  }
+  .saved-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .saved-card-overlay {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 10px 9px;
+    background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,0));
+  }
+  .saved-card-name { font-size: 12.5px; font-weight: 700; color: #fff; line-height: 1.25; }
+  .saved-card-meta { font-size: 10.5px; color: rgba(255,255,255,.82); margin-top: 1px; }
+  .saved-card-remove {
+    position: absolute; top: 6px; right: 6px; z-index: 1; width: 26px; height: 26px; border-radius: 50%;
+    border: none; cursor: pointer; background: rgba(20,22,18,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+  }
+  #saved-empty { display: none; }
+  #saved-empty.show { display: block; }
 
   /* ---- Coverage pins: mark regions with data when zoomed out to find them ---- */
   .region-pin {
@@ -518,6 +544,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg>
       <span>AI Guide</span>
     </button>
+    <button id="saved-btn" type="button" class="nav-item" title="Saved spots">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6.5-3.8L5.5 21V4.5a1 1 0 0 1 1-1Z"/></svg>
+      <span>Saved</span>
+    </button>
   </nav>
 
   <div id="elevation-hud">
@@ -585,6 +615,19 @@
     <input type="search" id="search-input" placeholder="Search a peak, trail, or camp spot…" autocomplete="off" />
     <p id="search-hint" class="meta">Search named peaks, trails &amp; landmarks (Wikidata), our recommended camp spots, plus anything already loaded on screen.</p>
     <div id="search-results"></div>
+  </div>
+
+  <div id="saved-sheet" class="sheet">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <h1>Saved Spots</h1>
+      <button type="button" class="sheet-close" data-close title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p class="meta">Saved on this device only — there's no backend here to publish or share these.</p>
+    <div id="saved-grid"></div>
+    <p id="saved-empty" class="meta">Nothing saved yet. Tap "Save to this device" on any spot's card to add it here.</p>
   </div>
 
   <div id="info-sheet" class="sheet">
@@ -742,12 +785,14 @@
     const aiSheet = document.getElementById('ai-sheet');
     const aiSettingsSheet = document.getElementById('ai-settings-sheet');
     const aiCloseBtn = document.getElementById('ai-close');
+    const savedBtn = document.getElementById('saved-btn');
+    const savedSheet = document.getElementById('saved-sheet');
 
     // Every bottom-nav button gets its .active class cleared centrally —
     // previously only some of these were cleared ad hoc in closeSheets(),
     // which meant menuBtn (About) stayed visually "active" forever once
     // opened once, even after switching to a different tab.
-    const NAV_BTNS = [menuBtn, layersBtn, regionsBtn, searchBtn, aiBtn];
+    const NAV_BTNS = [menuBtn, layersBtn, regionsBtn, searchBtn, aiBtn, savedBtn];
     function closeSheets() {
       aboutSheet.classList.remove('open');
       layersSheet.classList.remove('open');
@@ -756,6 +801,7 @@
       infoSheet.classList.remove('open');
       aiSheet.classList.remove('open');
       aiSettingsSheet.classList.remove('open');
+      savedSheet.classList.remove('open');
       for (const btn of NAV_BTNS) btn.classList.remove('active');
       scrim.classList.remove('open');
     }
@@ -2249,6 +2295,7 @@
         }
       }
       let savedSpots = loadSavedSpots();
+      const SAVED_SOURCE_LABELS = { curated: 'Recommended Spot', scanned: 'Scanner Pick' };
 
       function ensureSavedSpotLayers() {
         if (map.getSource('saved-spots')) return;
@@ -2309,13 +2356,77 @@
         savedSpots.push({ ...entry, savedAt: new Date().toISOString() });
         writeSavedSpots();
         refreshSavedSpotsLayer();
+        if (savedSheet.classList.contains('open')) renderSavedGrid();
         return true;
       }
       function unsaveSpot(id) {
         savedSpots = savedSpots.filter((s) => s.id !== id);
         writeSavedSpots();
         refreshSavedSpotsLayer();
+        if (savedSheet.classList.contains('open')) renderSavedGrid();
       }
+
+      // Saved sheet: a card grid like a "discover feed" rather than the
+      // plain list rows used for Regions/Search — each card gets a real
+      // picture (the curated spot's own verified photo when saved from
+      // one, otherwise a satellite crop of that exact coordinate, so
+      // every card has *something* to look at even for a scanned/manual
+      // save with no photography behind it) plus a tap-to-remove control
+      // that doesn't require opening the full detail card.
+      const savedGrid = document.getElementById('saved-grid');
+      const savedEmpty = document.getElementById('saved-empty');
+      function renderSavedGrid() {
+        savedGrid.innerHTML = '';
+        savedEmpty.classList.toggle('show', savedSpots.length === 0);
+        const sorted = [...savedSpots].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+        for (const entry of sorted) {
+          // A <div> rather than a <button> — it holds the remove button as
+          // a nested interactive child, which real <button>-in-<button>
+          // nesting doesn't allow.
+          const card = document.createElement('div');
+          card.className = 'saved-card';
+          card.setAttribute('role', 'button');
+          card.tabIndex = 0;
+
+          const img = document.createElement('img');
+          img.loading = 'lazy';
+          img.alt = entry.label || 'Saved spot';
+          img.src = entry.photoUrl || satelliteThumbUrl(entry.coordinates[1], entry.coordinates[0]);
+          card.append(img);
+
+          const overlay = document.createElement('div');
+          overlay.className = 'saved-card-overlay';
+          const name = document.createElement('div');
+          name.className = 'saved-card-name';
+          name.textContent = entry.label || 'Saved Spot';
+          const meta = document.createElement('div');
+          meta.className = 'saved-card-meta';
+          meta.textContent = SAVED_SOURCE_LABELS[entry.source] || 'Saved manually';
+          overlay.append(name, meta);
+          card.append(overlay);
+
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'saved-card-remove';
+          removeBtn.title = 'Remove from saved';
+          removeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+          removeBtn.onclick = (e) => { e.stopPropagation(); unsaveSpot(entry.id); };
+          card.append(removeBtn);
+
+          const openCard = () => {
+            closeSheets();
+            map.flyTo({ center: entry.coordinates, zoom: Math.max(map.getZoom(), 12.5), duration: 900 });
+            showSavedSpotCard(entry);
+          };
+          card.onclick = openCard;
+          card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(); } };
+          savedGrid.append(card);
+        }
+      }
+      savedBtn.onclick = () => {
+        toggleSheet(savedSheet, savedBtn);
+        if (savedSheet.classList.contains('open')) renderSavedGrid();
+      };
 
       // Shared save/unsave controls for info cards — "save" always means
       // this browser's localStorage, never a submission to the shared
@@ -2336,6 +2447,7 @@
         body.append(btn);
         body.append(paragraph('Saved on this device only — there\'s no backend here to publish or share it.', 'info-desc'));
       }
+      appendSaveButtonFn = appendSaveButton; // exposes it to showGemSpotCard, defined at top level
       function appendUnsaveButton(body, id) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -2376,14 +2488,28 @@
         }, feature.geometry.coordinates);
       }
 
-      function showSavedSpotCard(feature) {
-        const props = feature.properties;
+      // Takes a saved-spot entry straight out of the savedSpots array
+      // (id/label/coordinates/source/savedAt/photoUrl) rather than a map
+      // feature — called both from a tap on the pink map pin and from a
+      // card in the Saved sheet's grid, neither of which has a real
+      // queryRenderedFeatures feature behind it.
+      function showSavedSpotCard(entry) {
         setInfoIcon(SPOT_STYLE);
-        openInfoCard('Saved Spot', props.label || 'Saved Camp Spot', (body) => {
+        const curatedPhoto = entry.photoUrl ? { url: entry.photoUrl } : null;
+        openInfoCard('Saved Spot', entry.label || 'Saved Camp Spot', (body) => {
+          const facts = document.createElement('div');
+          facts.className = 'info-facts';
+          [
+            factRow('Type', SAVED_SOURCE_LABELS[entry.source] || 'Saved manually'),
+            factRow('Elevation', formatElevation(absoluteElevation(entry.coordinates))),
+            factRow('Saved', entry.savedAt ? new Date(entry.savedAt).toLocaleDateString() : null),
+          ].forEach((row) => row && facts.append(row));
+          if (facts.children.length) body.append(facts);
+
           body.append(paragraph('Saved on this device only — not part of the verified dataset, not shared with anyone else.', 'info-desc'));
-          appendUnsaveButton(body, props.id);
-          appendDownloadAreaButton(body, feature.geometry, props.label || 'Saved Camp Spot', SPOT_BUFFER_DEG);
-        }, feature.geometry.coordinates);
+          appendUnsaveButton(body, entry.id);
+          appendDownloadAreaButton(body, { type: 'Point', coordinates: entry.coordinates }, entry.label || 'Saved Camp Spot', SPOT_BUFFER_DEG);
+        }, entry.coordinates, curatedPhoto);
       }
 
       // Separate from setupInfoClicks (which only knows about static
@@ -2407,7 +2533,7 @@
           }
           if (savedSpots.length) {
             const saved = nearestByProjectedDistance(map, e.point, savedSpots, (s) => s.coordinates, 20);
-            if (saved) return showSavedSpotCard({ properties: { id: saved.id, label: saved.label }, geometry: { type: 'Point', coordinates: saved.coordinates } });
+            if (saved) return showSavedSpotCard(saved);
           }
         });
       }
@@ -2926,6 +3052,13 @@
     let findCampSpotNearFn = null; // set inside start() once the map/scanner exist; used by card buttons defined at top level
     let downloadAreaAroundFn = null; // same pattern, for the "Download this area" button below
     let fetchLandmarksFn = null; // same pattern, lets downloadRegionForOffline pre-fetch peak/place names
+    // Same pattern again: appendSaveButton/isSpotSaved/savedSpots all live
+    // inside start() (they need the map instance for the pink saved-spot
+    // layer), but showGemSpotCard is a top-level card-builder like
+    // showTrailCard/showRecSiteCard — without this ref its "Save to this
+    // device" button call would throw ReferenceError: appendSaveButton is
+    // not defined the first time anyone taps a recommended spot.
+    let appendSaveButtonFn = null;
     let lastScanContextTextRef = ''; // mirrors runCampScan's lastScanContextText — initAIGuide() lives outside start(), so it reads this instead
 
     // Reuses aiBtn's own click handler (wired up in initAIGuide) rather
@@ -3110,11 +3243,12 @@
           });
         }
 
-        appendSaveButton(body, {
+        if (appendSaveButtonFn) appendSaveButtonFn(body, {
           id: props.id != null ? `gem-${props.id}` : `gem-${lat.toFixed(5)}-${lng.toFixed(5)}`,
           label: props.name,
           coordinates: feature.geometry.coordinates,
           source: 'curated',
+          photoUrl: props.photo_url || null,
         });
         appendFindSpotButton(body, feature.geometry.coordinates, props.name);
       }, feature.geometry.coordinates, props.photo_url ? {
