@@ -1891,7 +1891,6 @@
         const wantPanoramic = spotFilterState.view.has('panoramic');
         const wantOpenValley = spotFilterState.view.has('openValley');
         const wantTrailer = spotFilterState.camp.has('trailerOk');
-        const needsNlcd = wantWater || wantWooded;
 
         const wildernessWasHidden = map.getLayoutProperty('wilderness', 'visibility') !== 'visible';
         if (wildernessWasHidden) map.setLayoutProperty('wilderness', 'visibility', 'visible');
@@ -1929,42 +1928,47 @@
           terrainSurvivors.push({ ...c, roughness, openness });
         }
 
-        // Pass 2: only the terrain survivors get the network-backed NLCD
-        // check (water/tree cover), batched with limited concurrency —
-        // same courtesy toward the free government service as the spot
-        // enrichment pass. A wide/zoomed-out view can turn up hundreds of
-        // terrain survivors even though only MAX_RESULTS are ever kept —
-        // checking NLCD for every single one of them serially against a
-        // free, sometimes-slow government WMS is what actually caused
-        // multi-minute "Scanning terrain…" hangs in practice. Pre-sort by
-        // the same score used below and only NLCD-check a generous
-        // multiple of MAX_RESULTS worth of the best candidates — plenty
-        // of headroom for the spacing pass to still fill MAX_RESULTS
-        // slots, without a huge view meaning a huge number of network
-        // calls.
+        // Pass 2: the network-backed NLCD land-cover check, batched with
+        // limited concurrency — same courtesy toward the free government
+        // service as the spot enrichment pass. A wide/zoomed-out view can
+        // turn up hundreds of terrain survivors even though only
+        // MAX_RESULTS are ever kept — checking NLCD for every single one
+        // of them serially against a free, sometimes-slow government WMS
+        // is what actually caused multi-minute "Scanning terrain…" hangs
+        // in practice. Pre-sort by the same score used below and only
+        // NLCD-check a generous multiple of MAX_RESULTS worth of the best
+        // candidates — plenty of headroom for the spacing pass to still
+        // fill MAX_RESULTS slots, without a huge view meaning a huge
+        // number of network calls.
+        //
+        // This pass now always runs (not just when wantWater/wantWooded
+        // are set): a lake surface is exactly the kind of flat,
+        // unobstructed ground Pass 1's roughness/openness scoring likes,
+        // so without an unconditional land-cover check a scan could — and
+        // in practice did — place a candidate pin in the middle of open
+        // water. Checking land cover is the only way to catch that (the
+        // basemap has no queryable water layer, only NLCD).
         const NLCD_CHECK_CAP = MAX_RESULTS * 10;
-        let nlcdSurvivors = terrainSurvivors;
-        if (needsNlcd) {
-          const prioritized = [...terrainSurvivors]
-            .sort((a, b) => (b.openness - b.roughness * 15) - (a.openness - a.roughness * 15))
-            .slice(0, NLCD_CHECK_CAP);
-          nlcdSurvivors = [];
-          const CONCURRENCY = 6;
-          for (let i = 0; i < prioritized.length; i += CONCURRENCY) {
-            const batch = prioritized.slice(i, i + CONCURRENCY);
-            const results = await Promise.all(batch.map(async (c) => {
-              const [landCover, canopyPct] = await Promise.all([
-                queryNlcd(NLCD_LAND_COVER_LAYER, [c.lng, c.lat]),
-                queryNlcd(NLCD_CANOPY_LAYER, [c.lng, c.lat]),
-              ]);
-              const wooded = NLCD_FOREST_CLASSES.has(landCover) || (canopyPct != null && canopyPct >= 30);
-              const nearWater = NLCD_WATER_CLASSES.has(landCover);
-              if (wantWater && !nearWater) return null;
-              if (wantWooded && !wooded) return null;
-              return { ...c, wooded, nearWater };
-            }));
-            nlcdSurvivors.push(...results.filter(Boolean));
-          }
+        const prioritized = [...terrainSurvivors]
+          .sort((a, b) => (b.openness - b.roughness * 15) - (a.openness - a.roughness * 15))
+          .slice(0, NLCD_CHECK_CAP);
+        const nlcdSurvivors = [];
+        const CONCURRENCY = 6;
+        for (let i = 0; i < prioritized.length; i += CONCURRENCY) {
+          const batch = prioritized.slice(i, i + CONCURRENCY);
+          const results = await Promise.all(batch.map(async (c) => {
+            const [landCover, canopyPct] = await Promise.all([
+              queryNlcd(NLCD_LAND_COVER_LAYER, [c.lng, c.lat]),
+              wantWooded ? queryNlcd(NLCD_CANOPY_LAYER, [c.lng, c.lat]) : Promise.resolve(null),
+            ]);
+            if (NLCD_WATER_CLASSES.has(landCover)) return null; // never place a candidate literally on/in open water
+            const wooded = NLCD_FOREST_CLASSES.has(landCover) || (canopyPct != null && canopyPct >= 30);
+            const nearWater = wantWater ? await isNearOpenWater([c.lng, c.lat]) : false;
+            if (wantWater && !nearWater) return null;
+            if (wantWooded && !wooded) return null;
+            return { ...c, wooded, nearWater };
+          }));
+          nlcdSurvivors.push(...results.filter(Boolean));
         }
 
         const scored = nlcdSurvivors.map((c) => ({ ...c, score: c.openness - c.roughness * 15 }));
@@ -2665,6 +2669,23 @@
           .finally(() => clearTimeout(timeout));
         nlcdCache.set(key, result);
         return result;
+      }
+
+      // "Near water" should mean camped beside a lake/stream, not
+      // standing in one — checking only the candidate's own NLCD pixel
+      // (the original implementation) meant "near water" actually matched
+      // ON open water, since a lake surface is exactly the kind of flat,
+      // unobstructed ground the terrain scorer likes and put real
+      // candidate pins in the middle of a lake in practice. Sample a
+      // short ring around the candidate instead: true only if a nearby
+      // point is classified as open water while the candidate's own
+      // point (verified dry by the caller first) isn't.
+      async function isNearOpenWater([lng, lat]) {
+        const { perDegLat, perDegLng } = metersToDegrees(lat);
+        const ringM = 120;
+        const offsets = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [lng + (dx * ringM) / perDegLng, lat + (dy * ringM) / perDegLat]);
+        const results = await Promise.all(offsets.map((pt) => queryNlcd(NLCD_LAND_COVER_LAYER, pt)));
+        return results.some((lc) => NLCD_WATER_CLASSES.has(lc));
       }
 
       // What the scanner searches for — set directly by the preference
@@ -5155,6 +5176,7 @@ HOW TO EVALUATE A SPOT (use this for matching existing spots AND any unverified 
 - Season: alpine spots usually only open June/July-Sept (snowpack-dependent); low-desert is better shoulder-season, not summer.
 
 RULES:
+- MANDATORY, read before doing anything else: before recommending or proposing ANY specific place to camp — matching a named place from the table, finding something new/unique, or pinpointing an exact spot — you must already know, from this conversation, all three of: (1) what view/setting they want (open valley, panoramic, near water, wooded/sheltered, or "no preference" if they say so), (2) what they're camping with (tent, hammock, or trailer/RV), and (3) whether they need to drive there or hiking/backpacking in is fine. A reference photo can sometimes answer (1) on its own (the scenery is right there in the image) but never (2) or (3). If even one of the three is still unknown after this message, your ENTIRE reply this turn must be ONLY a short, natural question asking for whichever is missing — no spot names, no descriptions, no "here's a great match," nothing else in that message. This does not apply to a plain informational question about a place the user already named (e.g. "how tall is X," "what's the access like") — only to actually recommending somewhere to camp.
 - Write in plain conversational text, not markdown: no asterisks, no bold/italic markers, no pound-sign headers, no code fences. If you're listing more than one spot, put each one in its own short paragraph (blank line between) starting with the spot's name, not a bulleted or numbered list. This is a phone chat bubble, not a rendered document.
 - Prefer the table below, but ONLY treat a row as an answer to a NAMED place (a specific trail, canyon, peak, cabin, route) if its forest/coordinates/description actually connect to that named place. Sharing a general tag with the question (wilderness, hammock-friendly, a view_type) is NOT enough to call it a match — a spot in a different canyon/drainage than the one asked about is not a match just because it's generally similar. If nothing in the table is actually connected to the specific place named, say that plainly (per the unverified-lead rule below) instead of substituting a loosely-similar row as if it answers the question.
 - Write like a person, not a database dump: describe access, views, and elevation in plain sentences using what the columns mean (e.g. "a short backpack in, open July through September, GPS is approximate") — never recite raw column names or values verbatim (e.g. never write "access_type is backpack_short" or "coord_precision is approx"). Do still cite the spot's real name exactly so it links correctly.
