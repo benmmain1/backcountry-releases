@@ -2923,6 +2923,13 @@
     // but needs this to fly to and open a spot a reply links to.
     let mapRef = null;
     let gemSpotsRef = null; // { layerId, loaded } from addGemSpotsLayer
+    // The exact rows addGemSpotsLayer actually rendered (live fetch or its
+    // own offline/IndexedDB fallback) — click-matching reads this directly
+    // instead of firing a second, independent fetch of its own, so a pin
+    // that's visibly rendered is never left unclickable by some other
+    // fetch racing or failing separately from the one that put it on the
+    // map.
+    let gemSpotRows = [];
     let findCampSpotNearFn = null; // set inside start() once the map/scanner exist; used by card buttons defined at top level
     let downloadAreaAroundFn = null; // same pattern, for the "Download this area" button below
     let fetchLandmarksFn = null; // same pattern, lets downloadRegionForOffline pre-fetch peak/place names
@@ -3168,7 +3175,13 @@
       let best = null, bestDist = Infinity;
       for (const item of items) {
         const lngLat = getLngLat(item);
-        if (!lngLat) continue;
+        // A single malformed entry (missing/non-numeric coordinate — real
+        // possibility across a few hundred rows of varying data quality,
+        // e.g. anything with only a "rough area" location on record) would
+        // otherwise throw inside map.project and abort the loop before
+        // ever reaching the rest of the list, silently breaking every tap
+        // in that pass rather than just skipping the one bad row.
+        if (!lngLat || !Number.isFinite(+lngLat[0]) || !Number.isFinite(+lngLat[1])) continue;
         const p = map.project(lngLat);
         const d = Math.hypot(p.x - point.x, p.y - point.y);
         if (d <= maxPx && d < bestDist) { bestDist = d; best = item; }
@@ -3195,7 +3208,7 @@
         map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
       }
 
-      map.on('click', async (e) => {
+      map.on('click', (e) => {
         // Padded well past the actual pixel: circles render as small as
         // 3px radius at low zoom, and finger taps land several CSS px off
         // target on real phones, so an exact hit is unreliable on touch.
@@ -3208,10 +3221,11 @@
         // Matched via nearestByProjectedDistance rather than
         // queryRenderedFeatures — gem spots are exactly the layer most
         // likely to sit on steep, scenic 3D terrain where picking misses —
-        // using the same row data the layer itself was built from.
+        // against gemSpotRows, the exact rows the layer itself rendered
+        // (not a second independent fetch, which could race or fail
+        // separately from the one that actually put the pins on screen).
         if (gemLayers.length) {
-          const rows = await getSpotsRows();
-          const nearest = nearestByProjectedDistance(map, e.point, rows, (r) => [r.lon, r.lat], 20);
+          const nearest = nearestByProjectedDistance(map, e.point, gemSpotRows, (r) => [r.lon, r.lat], 20);
           if (nearest) return showGemSpotCard({ properties: nearest, geometry: { type: 'Point', coordinates: [nearest.lon, nearest.lat] } });
         }
         if (recLayers.length) {
@@ -3529,6 +3543,7 @@
           rows = await idbGet(MISC_STORE, 'gem-spots').catch(() => null);
         }
         if (!rows) return 0;
+        gemSpotRows = rows;
         map.getSource(sourceId).setData({
           type: 'FeatureCollection',
           features: rows.map((row) => ({
