@@ -322,6 +322,48 @@
   #saved-empty { display: none; }
   #saved-empty.show { display: block; }
 
+  /* ---- Collections home: same grid as the spot cards above, but a
+     lighter "folder" look — cover photo when the collection has one,
+     plain card surface when it doesn't (an empty collection, or the "+
+     New" tile). ---- */
+  .collection-tile {
+    position: relative; border-radius: 14px; overflow: hidden; cursor: pointer;
+    aspect-ratio: 3 / 4; background: var(--card); border: 1px solid var(--border);
+  }
+  .collection-tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .collection-tile-overlay {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 10px 9px;
+  }
+  .collection-tile.empty .collection-tile-overlay {
+    position: static; padding: 12px 10px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  .collection-tile:not(.empty) .collection-tile-overlay { background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,0)); }
+  .collection-tile:not(.empty) .collection-tile-name, .collection-tile:not(.empty) .collection-tile-count { color: #fff; }
+  .collection-tile-name { font-size: 12.5px; font-weight: 700; line-height: 1.25; color: var(--text); }
+  .collection-tile-count { font-size: 10.5px; margin-top: 1px; color: var(--muted); }
+  .collection-tile:not(.empty) .collection-tile-count { color: rgba(255,255,255,.82); }
+  .collection-tile.new {
+    border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 10px; color: var(--muted); font-size: 13px; font-weight: 700;
+  }
+  .collection-new-input { margin: 0; }
+  .collection-tile-remove {
+    position: absolute; top: 6px; right: 6px; z-index: 1; width: 26px; height: 26px; border-radius: 50%;
+    border: none; cursor: pointer; background: rgba(20,22,18,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+  }
+  .collection-tile.empty .collection-tile-remove { background: var(--border); color: var(--text); }
+
+  /* ---- Collection checklist inside a saved spot's detail card — plain
+     checkboxes rather than the iOS-style .switch used in the Layers panel
+     (that component's CSS is scoped to #layers-sheet only). ---- */
+  .collection-check-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); cursor: pointer;
+  }
+  .collection-check-row:first-of-type { border-top: none; }
+  .collection-check-row input { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+  .collection-check-row span { font-size: 13.5px; flex: 1; }
+
   /* ---- Coverage pins: mark regions with data when zoomed out to find them ---- */
   .region-pin {
     display: flex; align-items: center; gap: 7px;
@@ -343,6 +385,22 @@
     background: #4a90e2; border: 3px solid #fff;
     box-shadow: 0 0 0 2px rgba(74,144,226,.5), 0 2px 6px rgba(0,0,0,.4);
   }
+
+  /* ---- Temporary marker shown while a dropped pin's save card is open ---- */
+  .dropped-pin-marker {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #e05fa0; border: 3px solid #fff;
+    box-shadow: 0 0 0 2px rgba(224,95,160,.5), 0 2px 6px rgba(0,0,0,.4);
+  }
+
+  /* ---- Editable name field inside a card body (dropped pin, new
+     collection) — same look as #search-input, generalized to a class so
+     it can be reused inside #info-sheet. ---- */
+  .pin-label-input {
+    width: 100%; box-sizing: border-box; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 15px; margin-bottom: 8px;
+  }
+  .pin-label-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
   /* ---- Info card: tap a trail or rec site to see details ---- */
   #info-sheet .info-head { display: flex; align-items: center; gap: 12px; }
@@ -627,7 +685,10 @@
   <div id="saved-sheet" class="sheet">
     <div class="grabber"></div>
     <div class="sheet-head">
-      <h1>Saved Spots</h1>
+      <button type="button" id="saved-back-btn" class="sheet-close" title="Back to collections" hidden>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h1 id="saved-title">Saved Spots</h1>
       <button type="button" class="sheet-close" data-close title="Close">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
@@ -801,6 +862,7 @@
     // opened once, even after switching to a different tab.
     const NAV_BTNS = [menuBtn, layersBtn, regionsBtn, searchBtn, aiBtn, savedBtn];
     function closeSheets() {
+      clearPendingPinFn?.(); // removes a dropped-but-unsaved pin's temp marker whenever any sheet closes/switches
       aboutSheet.classList.remove('open');
       layersSheet.classList.remove('open');
       regionsSheet.classList.remove('open');
@@ -1261,6 +1323,11 @@
       let locationMarker = null;
       let locationWatchId = null;
       let locationTracking = false;
+      // The temporary marker shown while a dropped pin's "name & save" card
+      // is open — separate from the permanent saved-spots layer (which only
+      // knows about entries actually in savedSpots), removed once that card
+      // closes regardless of whether the pin was saved.
+      let pendingPinMarker = null;
 
       function stopLocationTracking() {
         locationTracking = false;
@@ -2328,7 +2395,10 @@
       const SAVED_SPOTS_KEY = 'backcountry-saved-spots-v1';
       function loadSavedSpots() {
         try {
-          return JSON.parse(localStorage.getItem(SAVED_SPOTS_KEY) || '[]');
+          const parsed = JSON.parse(localStorage.getItem(SAVED_SPOTS_KEY) || '[]');
+          // Backfill collectionIds for entries saved before Collections
+          // existed — real users already have entries with no such field.
+          return parsed.map((s) => ({ collectionIds: [], ...s }));
         } catch (err) {
           console.warn('Failed to read saved spots', err);
           return [];
@@ -2342,7 +2412,59 @@
         }
       }
       let savedSpots = loadSavedSpots();
-      const SAVED_SOURCE_LABELS = { curated: 'Recommended Spot', scanned: 'Scanner Pick' };
+      const SAVED_SOURCE_LABELS = { curated: 'Recommended Spot', scanned: 'Scanner Pick', dropped: 'Dropped Pin' };
+
+      // Instagram-style collections: named groups a saved spot can belong
+      // to (many-to-many via entry.collectionIds), purely organizational —
+      // deleting a collection never deletes the spots in it.
+      const COLLECTIONS_KEY = 'backcountry-collections-v1';
+      function loadCollections() {
+        try {
+          return JSON.parse(localStorage.getItem(COLLECTIONS_KEY) || '[]');
+        } catch (err) {
+          console.warn('Failed to read collections', err);
+          return [];
+        }
+      }
+      function writeCollections() {
+        try {
+          localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
+        } catch (err) {
+          console.warn('Failed to persist collections', err);
+        }
+      }
+      let collections = loadCollections();
+      function createCollection(name) {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return null;
+        const collection = { id: `collection-${Date.now()}`, name: trimmed, createdAt: new Date().toISOString() };
+        collections.push(collection);
+        writeCollections();
+        return collection;
+      }
+      function renameCollection(id, name) {
+        const trimmed = (name || '').trim();
+        const collection = collections.find((c) => c.id === id);
+        if (!collection || !trimmed) return;
+        collection.name = trimmed;
+        writeCollections();
+      }
+      function deleteCollection(id) {
+        collections = collections.filter((c) => c.id !== id);
+        // Strip the deleted id out of every spot's membership list too —
+        // otherwise collectionIds accumulates dangling references forever.
+        for (const s of savedSpots) {
+          if (s.collectionIds.includes(id)) s.collectionIds = s.collectionIds.filter((cid) => cid !== id);
+        }
+        writeCollections();
+        writeSavedSpots();
+      }
+      function toggleSpotCollection(entry, collectionId) {
+        entry.collectionIds = entry.collectionIds.includes(collectionId)
+          ? entry.collectionIds.filter((id) => id !== collectionId)
+          : [...entry.collectionIds, collectionId];
+        writeSavedSpots();
+      }
 
       function ensureSavedSpotLayers() {
         if (map.getSource('saved-spots')) return;
@@ -2400,32 +2522,146 @@
       }
       function saveSpot(entry) {
         if (isSpotSaved(entry.id)) return false;
-        savedSpots.push({ ...entry, savedAt: new Date().toISOString() });
+        savedSpots.push({ collectionIds: [], ...entry, savedAt: new Date().toISOString() });
         writeSavedSpots();
         refreshSavedSpotsLayer();
-        if (savedSheet.classList.contains('open')) renderSavedGrid();
+        if (savedSheet.classList.contains('open')) refreshSavedSheetView();
         return true;
       }
       function unsaveSpot(id) {
         savedSpots = savedSpots.filter((s) => s.id !== id);
         writeSavedSpots();
         refreshSavedSpotsLayer();
-        if (savedSheet.classList.contains('open')) renderSavedGrid();
+        if (savedSheet.classList.contains('open')) refreshSavedSheetView();
       }
 
-      // Saved sheet: a card grid like a "discover feed" rather than the
-      // plain list rows used for Regions/Search — each card gets a real
-      // picture (the curated spot's own verified photo when saved from
-      // one, otherwise a satellite crop of that exact coordinate, so
-      // every card has *something* to look at even for a scanned/manual
-      // save with no photography behind it) plus a tap-to-remove control
-      // that doesn't require opening the full detail card.
+      // Saved sheet: a two-level view, Instagram-collections-style. Level 1
+      // ("collections home") is a grid of collection covers — a pinned
+      // "All Saved" tile plus one per user collection plus a "+ New" tile.
+      // Level 2 reuses the same #saved-grid element for the actual spot
+      // cards (a "discover feed" look: a real picture — the curated spot's
+      // own verified photo when saved from one, otherwise a satellite crop
+      // of that exact coordinate, so every card has *something* to look at
+      // — plus a tap-to-remove control that doesn't require opening the
+      // full detail card).
       const savedGrid = document.getElementById('saved-grid');
       const savedEmpty = document.getElementById('saved-empty');
-      function renderSavedGrid() {
+      const savedTitle = document.getElementById('saved-title');
+      const savedBackBtn = document.getElementById('saved-back-btn');
+      const ALL_SAVED_ID = '__all__';
+      let savedView = { mode: 'collections', collectionId: null };
+
+      function spotsInCollection(collectionId) {
+        return collectionId === ALL_SAVED_ID
+          ? savedSpots
+          : savedSpots.filter((s) => s.collectionIds.includes(collectionId));
+      }
+
+      function refreshSavedSheetView() {
+        if (savedView.mode === 'collections') renderCollectionsHome();
+        else renderSavedGrid(savedView.collectionId);
+      }
+
+      function renderCollectionsHome() {
+        savedBackBtn.hidden = true;
+        savedTitle.textContent = 'Saved Spots';
+        savedEmpty.classList.remove('show'); // collections home always has at least "All Saved" + "+ New" tiles
         savedGrid.innerHTML = '';
-        savedEmpty.classList.toggle('show', savedSpots.length === 0);
-        const sorted = [...savedSpots].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+
+        function openCollection(id) {
+          savedView = { mode: 'grid', collectionId: id };
+          refreshSavedSheetView();
+        }
+        function tileCover(members) {
+          const withPhoto = members.find((s) => s.photoUrl) || members[0];
+          return withPhoto ? (withPhoto.photoUrl || satelliteThumbUrl(withPhoto.coordinates[1], withPhoto.coordinates[0])) : null;
+        }
+        function buildTile({ name, count, cover, onClick, onDelete }) {
+          // A <div>, not a <button> — it can hold the delete button as a
+          // nested interactive child (same reasoning as .saved-card).
+          const tile = document.createElement('div');
+          tile.className = 'collection-tile';
+          tile.setAttribute('role', 'button');
+          tile.tabIndex = 0;
+          if (cover) {
+            const img = document.createElement('img');
+            img.loading = 'lazy';
+            img.alt = '';
+            img.src = cover;
+            tile.append(img);
+          } else {
+            tile.classList.add('empty');
+          }
+          const overlay = document.createElement('div');
+          overlay.className = 'collection-tile-overlay';
+          const nameEl = document.createElement('div');
+          nameEl.className = 'collection-tile-name';
+          nameEl.textContent = name;
+          const countEl = document.createElement('div');
+          countEl.className = 'collection-tile-count';
+          countEl.textContent = `${count} spot${count === 1 ? '' : 's'}`;
+          overlay.append(nameEl, countEl);
+          tile.append(overlay);
+          if (onDelete) {
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'collection-tile-remove';
+            removeBtn.title = 'Delete collection';
+            removeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+            removeBtn.onclick = (e) => { e.stopPropagation(); onDelete(); };
+            tile.append(removeBtn);
+          }
+          tile.onclick = onClick;
+          tile.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } };
+          return tile;
+        }
+
+        savedGrid.append(buildTile({
+          name: 'All Saved', count: savedSpots.length, cover: tileCover(savedSpots),
+          onClick: () => openCollection(ALL_SAVED_ID),
+        }));
+        for (const c of collections) {
+          const members = spotsInCollection(c.id);
+          savedGrid.append(buildTile({
+            name: c.name, count: members.length, cover: tileCover(members), onClick: () => openCollection(c.id),
+            // Doesn't delete the spots themselves — just this grouping,
+            // and strips the now-dangling id out of every spot's
+            // collectionIds (see deleteCollection).
+            onDelete: () => { deleteCollection(c.id); renderCollectionsHome(); },
+          }));
+        }
+
+        const newTile = document.createElement('div');
+        newTile.className = 'collection-tile new';
+        newTile.setAttribute('role', 'button');
+        newTile.tabIndex = 0;
+        newTile.textContent = '+ New Collection';
+        newTile.onclick = () => {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'pin-label-input collection-new-input';
+          input.placeholder = 'Collection name';
+          newTile.replaceWith(input);
+          input.focus();
+          const commit = () => {
+            const created = createCollection(input.value);
+            renderCollectionsHome();
+            if (created) openCollection(created.id);
+          };
+          input.onblur = commit;
+          input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } };
+        };
+        newTile.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); newTile.click(); } };
+        savedGrid.append(newTile);
+      }
+
+      function renderSavedGrid(collectionId) {
+        savedBackBtn.hidden = false;
+        savedTitle.textContent = collectionId === ALL_SAVED_ID ? 'All Saved' : (collections.find((c) => c.id === collectionId)?.name || 'Saved Spots');
+        savedGrid.innerHTML = '';
+        const members = spotsInCollection(collectionId);
+        savedEmpty.classList.toggle('show', members.length === 0);
+        const sorted = [...members].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
         for (const entry of sorted) {
           // A <div> rather than a <button> — it holds the remove button as
           // a nested interactive child, which real <button>-in-<button>
@@ -2470,9 +2706,16 @@
           savedGrid.append(card);
         }
       }
+      savedBackBtn.onclick = () => {
+        savedView = { mode: 'collections', collectionId: null };
+        refreshSavedSheetView();
+      };
       savedBtn.onclick = () => {
         toggleSheet(savedSheet, savedBtn);
-        if (savedSheet.classList.contains('open')) renderSavedGrid();
+        if (savedSheet.classList.contains('open')) {
+          savedView = { mode: 'collections', collectionId: null };
+          refreshSavedSheetView();
+        }
       };
 
       // Shared save/unsave controls for info cards — "save" always means
@@ -2502,6 +2745,61 @@
         btn.textContent = 'Remove from saved';
         btn.onclick = () => { unsaveSpot(id); closeSheets(); };
         body.append(btn);
+      }
+
+      // Checklist of every collection with a checkbox for whether this
+      // spot belongs to it, plus an inline "+ New collection" — the one
+      // place collection membership is managed, reached from any saved
+      // spot's detail card. Plain checkboxes, not the iOS-style .switch
+      // used in the Layers panel (createSwitchRow) — that component's CSS
+      // is scoped to #layers-sheet only and would render unstyled here.
+      function appendCollectionsChecklist(body, entry) {
+        body.append(sectionTitle('Collections'));
+        const list = document.createElement('div');
+        body.append(list);
+        function renderList() {
+          list.innerHTML = '';
+          if (!collections.length) list.append(paragraph('No collections yet.', 'info-desc'));
+          for (const c of collections) {
+            const row = document.createElement('label');
+            row.className = 'collection-check-row';
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = entry.collectionIds.includes(c.id);
+            box.onchange = () => {
+              toggleSpotCollection(entry, c.id);
+              if (savedSheet.classList.contains('open')) refreshSavedSheetView();
+            };
+            const label = document.createElement('span');
+            label.textContent = c.name;
+            row.append(box, label);
+            list.append(row);
+          }
+        }
+        renderList();
+
+        const newBtn = document.createElement('button');
+        newBtn.type = 'button';
+        newBtn.className = 'panel-btn secondary';
+        newBtn.textContent = '+ New collection';
+        newBtn.onclick = () => {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'pin-label-input';
+          input.placeholder = 'Collection name';
+          newBtn.replaceWith(input);
+          input.focus();
+          const commit = () => {
+            const created = createCollection(input.value);
+            if (created) toggleSpotCollection(entry, created.id);
+            input.replaceWith(newBtn);
+            renderList();
+            if (savedSheet.classList.contains('open')) refreshSavedSheetView();
+          };
+          input.onblur = commit;
+          input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } };
+        };
+        body.append(newBtn);
       }
 
       function showScanResultCard(feature) {
@@ -2553,6 +2851,8 @@
           if (facts.children.length) body.append(facts);
 
           body.append(paragraph('Saved on this device only — not part of the verified dataset, not shared with anyone else.', 'info-desc'));
+          appendCollectionsChecklist(body, entry);
+          appendRouteButton(body, entry.coordinates, entry.label || 'Saved Camp Spot');
           appendUnsaveButton(body, entry.id);
           appendDownloadAreaButton(body, { type: 'Point', coordinates: entry.coordinates }, entry.label || 'Saved Camp Spot', SPOT_BUFFER_DEG);
         }, entry.coordinates, curatedPhoto);
@@ -2583,6 +2883,306 @@
           }
         });
       }
+
+      // Long-press-to-drop-a-pin: MapLibre synthesizes a 'contextmenu'
+      // MapMouseEvent both for a real right-click and for a long-press on
+      // touch devices, so this is the standard "drop a pin here" gesture
+      // (Google Maps/AllTrails/onX all use it) without any custom touch-
+      // timer gesture code.
+      function handlePinDrop(lngLat) {
+        closeSheets();
+        const coords = [lngLat.lng, lngLat.lat];
+        const defaultLabel = `Pin at ${lngLat.lat.toFixed(4)}, ${lngLat.lng.toFixed(4)}`;
+        const entry = { id: `dropped-${Date.now()}`, label: defaultLabel, coordinates: coords, source: 'dropped' };
+
+        if (pendingPinMarker) pendingPinMarker.remove();
+        const el = document.createElement('div');
+        el.className = 'dropped-pin-marker';
+        pendingPinMarker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(coords).addTo(map);
+
+        setInfoIcon(DROPPED_PIN_STYLE);
+        openInfoCard('Dropped Pin', defaultLabel, (body) => {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'pin-label-input';
+          input.value = defaultLabel;
+          input.placeholder = 'Name this spot';
+          input.oninput = () => { entry.label = input.value.trim() || defaultLabel; };
+          body.append(input);
+
+          // Called directly rather than through a ref — we're already
+          // inside start()'s closure here, unlike the top-level card
+          // builders (showGemSpotCard etc.) that need appendSaveButtonFn.
+          appendSaveButton(body, entry);
+          // Not clearing pendingPinMarker on save: the permanent pink
+          // saved-spot dot renders right next to it for the moment the
+          // card stays open (harmless), and closeSheets() already clears
+          // it via clearPendingPinFn the moment this card closes either
+          // way — avoids touching appendSaveButton's shared onclick, which
+          // every other card type also relies on.
+          appendRouteButton(body, coords, entry.label);
+          appendDownloadAreaButton(body, { type: 'Point', coordinates: coords }, entry.label, SPOT_BUFFER_DEG);
+        }, coords);
+
+        // "after they drop that pin, [it] will automatically find a route
+        // there" — fires immediately, without closing the card that was
+        // just opened (routeTo() deliberately never calls closeSheets()
+        // itself; only the manual "Route Here" button does, right before
+        // calling this same ref). The route draws on the map behind/around
+        // the open card.
+        if (routeToFn) routeToFn(coords, entry.label);
+      }
+
+      function setupPinDrop() {
+        map.on('contextmenu', (e) => {
+          e.originalEvent?.preventDefault?.();
+          handlePinDrop(e.lngLat);
+        });
+      }
+      clearPendingPinFn = () => {
+        if (pendingPinMarker) { pendingPinMarker.remove(); pendingPinMarker = null; }
+      };
+
+      // ---- Best-effort routing: draw a path to a saved/dropped spot,
+      // preferring real trail/road data over a straight line. This is NOT
+      // a real navigation engine — there's no backend here, no statewide
+      // precomputed graph, and no continuous re-routing as someone walks.
+      // It's a one-shot "build a graph from whatever trail/road tiles are
+      // currently loaded, and find the shortest path through them" tool,
+      // with an honest straight-line fallback whenever that graph doesn't
+      // connect start to destination. Every status message below says so
+      // plainly — never implies GPS-navigation-grade accuracy.
+
+      // Pulls every currently-loaded trails/mvum_routes LineString feature
+      // (map.querySourceFeatures only sees loaded/rendered tiles — never
+      // the whole statewide dataset) into an undirected weighted graph.
+      // Rebuilt fresh per route request since "currently loaded" changes
+      // as the user pans/zooms.
+      function buildRoutingGraph() {
+        const nodes = new Map(); // vertexKey -> { key, lng, lat, edges: [{to, weight}] }
+        const segments = []; // flat list of elementary segments, for snap-to-nearest
+
+        function getOrCreateNode([lng, lat]) {
+          const key = vertexKey([lng, lat]);
+          let n = nodes.get(key);
+          if (!n) { n = { key, lng, lat, edges: [] }; nodes.set(key, n); }
+          return n;
+        }
+        function addEdge(a, b) {
+          const na = getOrCreateNode(a), nb = getOrCreateNode(b);
+          if (na.key === nb.key) return; // degenerate zero-length segment
+          const w = haversineMeters(a, b);
+          na.edges.push({ to: nb.key, weight: w });
+          nb.edges.push({ to: na.key, weight: w }); // undirected
+          segments.push({ aCoord: a, bCoord: b, aKey: na.key, bKey: nb.key });
+        }
+        function ingest(sourceLayer) {
+          let features;
+          try { features = map.querySourceFeatures('backcountry', { sourceLayer }); }
+          catch { return; } // source/tiles not ready — same defensive pattern as searchOnScreen()
+          for (const f of features) {
+            if (f.geometry?.type !== 'LineString') continue;
+            const coords = f.geometry.coordinates;
+            for (let i = 0; i < coords.length - 1; i++) addEdge(coords[i], coords[i + 1]);
+          }
+        }
+        // One combined graph: foot trails + MVUM routes (both the
+        // dispersed-camping and "other" style layers are the same
+        // mvum_routes source-layer under a style filter, so one query
+        // already covers both) — a real backcountry route often means
+        // driving in on a road then continuing on foot on a trail.
+        ingest('trails');
+        ingest('mvum_routes');
+        return { nodes, segments };
+      }
+
+      // Projects target onto the closest point of segment [a,b], using the
+      // existing metersToDegrees scale factor for a locally-planar
+      // approximation — fine at this scale, not survey precision.
+      function projectPointOntoSegment(p, a, b) {
+        const { perDegLat, perDegLng } = metersToDegrees(a[1]);
+        const toXY = ([lng, lat]) => [(lng - a[0]) * perDegLng, (lat - a[1]) * perDegLat];
+        const [bx, by] = toXY(b);
+        const [px, py] = toXY(p);
+        const abLenSq = bx * bx + by * by;
+        let t = abLenSq === 0 ? 0 : (px * bx + py * by) / abLenSq;
+        t = Math.max(0, Math.min(1, t));
+        const point = [a[0] + (t * bx) / perDegLng, a[1] + (t * by) / perDegLat];
+        return { point, t, distMeters: haversineMeters(p, point) };
+      }
+
+      function findNearestSnap(target, segments) {
+        let best = null;
+        for (const seg of segments) {
+          const res = projectPointOntoSegment(target, seg.aCoord, seg.bCoord);
+          if (!best || res.distMeters < best.distMeters) best = { ...res, seg };
+        }
+        return best; // null only if segments is empty
+      }
+
+      // Inserts a synthetic node at the snap point, wired to the segment's
+      // two original endpoints — unless the snap point is essentially
+      // already an endpoint (t near 0 or 1), in which case that existing
+      // node is reused instead of creating a near-duplicate.
+      function insertSnapNode(nodes, snap) {
+        if (snap.t <= 1e-4) return snap.seg.aKey;
+        if (snap.t >= 1 - 1e-4) return snap.seg.bKey;
+        const key = `snap:${vertexKey(snap.point)}:${snap.seg.aKey}:${snap.seg.bKey}`;
+        if (nodes.has(key)) return key;
+        const node = { key, lng: snap.point[0], lat: snap.point[1], edges: [] };
+        nodes.set(key, node);
+        const na = nodes.get(snap.seg.aKey), nb = nodes.get(snap.seg.bKey);
+        const wa = haversineMeters(snap.point, snap.seg.aCoord);
+        const wb = haversineMeters(snap.point, snap.seg.bCoord);
+        node.edges.push({ to: na.key, weight: wa }, { to: nb.key, weight: wb });
+        na.edges.push({ to: node.key, weight: wa });
+        nb.edges.push({ to: node.key, weight: wb });
+        return key;
+      }
+
+      // Real Dijkstra — linear-scan minimum selection rather than a binary
+      // heap, deliberately: graphs here are bounded by whatever's currently
+      // loaded on screen (low hundreds to a couple thousand nodes at the
+      // zoom this runs at), and a hand-rolled heap isn't worth the added
+      // correctness risk at this scale.
+      function dijkstra(nodes, startKey, endKey) {
+        const dist = new Map(), prev = new Map(), visited = new Set();
+        for (const key of nodes.keys()) dist.set(key, Infinity);
+        dist.set(startKey, 0);
+        while (visited.size < nodes.size) {
+          let u = null, uDist = Infinity;
+          for (const [key, d] of dist) {
+            if (visited.has(key) || d >= uDist) continue;
+            uDist = d; u = key;
+          }
+          if (u === null || u === endKey) break;
+          visited.add(u);
+          for (const edge of nodes.get(u).edges) {
+            if (visited.has(edge.to)) continue;
+            const alt = uDist + edge.weight;
+            if (alt < dist.get(edge.to)) { dist.set(edge.to, alt); prev.set(edge.to, u); }
+          }
+        }
+        if (startKey !== endKey && !prev.has(endKey)) return null; // unreachable within the loaded graph
+        const path = [endKey];
+        for (let cur = endKey; cur !== startKey;) {
+          cur = prev.get(cur);
+          if (cur === undefined) return null;
+          path.push(cur);
+        }
+        path.reverse();
+        return path.map((k) => [nodes.get(k).lng, nodes.get(k).lat]);
+      }
+
+      // MapLibre paint properties take literal color values, not CSS custom
+      // properties — this resolves --accent once via getComputedStyle at
+      // layer-creation time, the same approach already used for the
+      // available-regions coverage layer's accent color elsewhere in this
+      // file. Won't live-update if the OS theme flips mid-session —
+      // consistent with that existing behavior.
+      function currentAccentColor() {
+        return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3f7d54';
+      }
+
+      function ensureRouteLayer() {
+        if (map.getSource('route')) return;
+        map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'route-off-network', type: 'line', source: 'route',
+          filter: ['==', ['get', 'kind'], 'off-network'],
+          paint: { 'line-color': currentAccentColor(), 'line-width': 3, 'line-dasharray': [2, 2], 'line-opacity': 0.85 },
+        });
+        map.addLayer({
+          id: 'route-on-network', type: 'line', source: 'route',
+          filter: ['==', ['get', 'kind'], 'on-network'],
+          paint: { 'line-color': currentAccentColor(), 'line-width': 4 },
+        });
+      }
+      function setRouteFeatures(features) {
+        ensureRouteLayer();
+        map.getSource('route').setData({ type: 'FeatureCollection', features });
+      }
+      function lineFeature(coords, kind) {
+        return { type: 'Feature', properties: { kind }, geometry: { type: 'LineString', coordinates: coords } };
+      }
+
+      const MAX_ROUTE_DISTANCE_M = 32000; // ~20mi — beyond this, don't even attempt a graph build over that much loaded/to-be-loaded tile area
+      const MAX_SNAP_DISTANCE_M = 3000; // if the nearest network point is farther than this from either end, it isn't meaningfully "on route"
+      const OFF_NETWORK_SKIP_M = 15; // don't draw a dashed nub for noise-level snap distances
+
+      async function getRouteStartPoint() {
+        if (locationTracking && locationMarker) {
+          const { lng, lat } = locationMarker.getLngLat();
+          return [lng, lat];
+        }
+        try {
+          const pos = await new Promise((resolve, reject) => {
+            const t = setTimeout(() => reject(new Error('timeout')), 5000);
+            navigator.geolocation.getCurrentPosition(
+              (p) => { clearTimeout(t); resolve(p); },
+              (err) => { clearTimeout(t); reject(err); },
+              { enableHighAccuracy: true, timeout: 5000 },
+            );
+          });
+          return [pos.coords.longitude, pos.coords.latitude];
+        } catch {
+          say('Couldn\'t get your location — routing from the current map center instead', 'warn');
+          const c = map.getCenter();
+          return [c.lng, c.lat];
+        }
+      }
+
+      // Deliberately never calls closeSheets() itself — handlePinDrop
+      // auto-fires this right after opening a "name & save" card, and
+      // force-closing sheets here would instantly close that card before
+      // the user could see it. The manual "Route Here" button
+      // (appendRouteButton) calls closeSheets() itself before invoking
+      // this, since in that context the user tapped a button expecting to
+      // watch the route draw.
+      async function routeTo(targetCoords, label) {
+        const startCoords = await getRouteStartPoint();
+        if (haversineMeters(startCoords, targetCoords) > MAX_ROUTE_DISTANCE_M) {
+          say(`${label || 'That spot'} is too far from your position for this best-effort router (it only works with map data that's actually loaded) — try navigating closer first`, 'warn');
+          return;
+        }
+        say(`Finding a route to ${label || 'this spot'}…`, 'warn');
+        const bounds = boundsOfCoordinates([startCoords, targetCoords]);
+        const pad = 0.01;
+        map.fitBounds([bounds[0] - pad, bounds[1] - pad, bounds[2] + pad, bounds[3] + pad], { padding: 60, duration: 900 });
+        await new Promise((resolve) => map.once('idle', resolve));
+
+        const { nodes, segments } = buildRoutingGraph();
+        if (!segments.length) {
+          setRouteFeatures([lineFeature([startCoords, targetCoords], 'off-network')]);
+          say('No trail or road data loaded near here — showing a straight-line estimate only, not a real route', 'warn');
+          return;
+        }
+
+        const startSnap = findNearestSnap(startCoords, segments);
+        const endSnap = findNearestSnap(targetCoords, segments);
+        if (startSnap.distMeters > MAX_SNAP_DISTANCE_M || endSnap.distMeters > MAX_SNAP_DISTANCE_M) {
+          setRouteFeatures([lineFeature([startCoords, targetCoords], 'off-network')]);
+          say('The nearest mapped trail/road is too far from one end of this route — showing a straight-line estimate only, not a real route', 'warn');
+          return;
+        }
+
+        const startKey = insertSnapNode(nodes, startSnap);
+        const endKey = insertSnapNode(nodes, endSnap);
+        const path = dijkstra(nodes, startKey, endKey);
+        if (!path) {
+          setRouteFeatures([lineFeature([startCoords, targetCoords], 'off-network')]);
+          say('No connected trail/road path found between here and there in the loaded map data — showing a straight-line estimate only, not a real route', 'warn');
+          return;
+        }
+
+        const features = [];
+        if (startSnap.distMeters > OFF_NETWORK_SKIP_M) features.push(lineFeature([startCoords, startSnap.point], 'off-network'));
+        features.push(lineFeature(path, 'on-network'));
+        if (endSnap.distMeters > OFF_NETWORK_SKIP_M) features.push(lineFeature([endSnap.point, targetCoords], 'off-network'));
+        setRouteFeatures(features);
+        say(`Best-effort route to ${label || 'this spot'} — follows mapped trails/roads where possible, dashed where you're off them. Not a substitute for navigation skills.`, 'warn');
+      }
+      routeToFn = routeTo;
 
       function buildScanPreferencesPanel() {
         if (!document.querySelector('#layers-body')) return;
@@ -2659,6 +3259,7 @@
         buildScanPreferencesPanel();
         setupInfoClicks(map, style, gemSpots.layerId);
         setupSpotClicks();
+        setupPinDrop();
         if (savedSpots.length) refreshSavedSpotsLayer();
         gemSpotsRef = gemSpots;
         updateLandmarks(); // in case the hash URL restored a view already zoomed in enough to show peaks
@@ -2934,6 +3535,40 @@
       }
       return [w, s, e, n];
     }
+
+    // Real-world great-circle distance — metersToDegrees (inside start(),
+    // used by the scanner) is a planar approximation for a search radius,
+    // not point-to-point distance, so the routing graph below needs its
+    // own real edge-weight function.
+    function haversineMeters([lng1, lat1], [lng2, lat2]) {
+      const R = 6371000;
+      const toRad = (d) => (d * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+    }
+
+    // Snaps near-coincident tile-boundary endpoints together so a route can
+    // cross tiles — trails/roads split across pmtiles tiles otherwise end
+    // up as disconnected graph components at every tile edge. ~5 decimal
+    // places is roughly 1m: an intentional approximation, not survey
+    // precision.
+    function vertexKey([lng, lat]) {
+      return `${lat.toFixed(5)},${lng.toFixed(5)}`;
+    }
+
+    // Set inside start() once the map/routing graph builder exist; used by
+    // card buttons defined at top level (same ref pattern as
+    // findCampSpotNearFn/downloadAreaAroundFn).
+    let routeToFn = null;
+    function appendRouteButton(body, coords, label) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'panel-btn secondary';
+      btn.textContent = 'Route here (best effort)';
+      btn.onclick = () => { closeSheets(); routeToFn && routeToFn(coords, label); };
+      body.append(btn);
+    }
     // A trail's own extent already covers its length, so it only needs a
     // narrow margin around the line; a point spot needs a real radius of
     // surrounding area to be useful to explore around.
@@ -3172,6 +3807,7 @@
     // device" button call would throw ReferenceError: appendSaveButton is
     // not defined the first time anyone taps a recommended spot.
     let appendSaveButtonFn = null;
+    let clearPendingPinFn = null; // clears a dropped-but-unsaved pin's temp marker; called from the top-level closeSheets()
     let lastScanContextTextRef = ''; // mirrors runCampScan's lastScanContextText — initAIGuide() lives outside start(), so it reads this instead
 
     // Reuses aiBtn's own click handler (wired up in initAIGuide) rather
@@ -3288,6 +3924,9 @@
     }
 
     const SPOT_STYLE = { color: '#1e7a4a', icon: ICON_SVG.tent };
+    // Pink to match the saved-spot dot color (ensureSavedSpotLayers) — a
+    // dropped pin reads as "saved-spots family" immediately.
+    const DROPPED_PIN_STYLE = { color: '#e05fa0', icon: ICON_SVG.pin };
 
     // showScanResultCard / showSavedSpotCard live inside start() now, not
     // here — they read lastScanResults and the save/unsave functions,
