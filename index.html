@@ -1863,14 +1863,15 @@
           // not just the first one found.
           const features = results.map((c, idx) => {
             const scanId = `scan-${c.lng.toFixed(5)}-${c.lat.toFixed(5)}`;
-            lastScanResults.set(scanId, c);
+            const isTop = idx === 0;
+            lastScanResults.set(scanId, { ...c, topPick: isTop });
             const tags = [c.wooded ? 'wooded' : null, c.nearWater ? 'near water' : null].filter(Boolean).join(' · ');
             return {
               type: 'Feature',
               properties: {
                 scanId,
-                topPick: idx === 0,
-                label: `${idx === 0 ? '★ Best pick' : `#${idx + 1}`} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${formatOpenness(c.openness)}${tags ? `\n${tags}` : ''}`,
+                topPick: isTop,
+                label: `${isTop ? '★ Best pick' : `#${idx + 1}`} · ${formatElevation(absoluteElevation([c.lng, c.lat]))}\nOpen view ~${formatOpenness(c.openness)}${tags ? `\n${tags}` : ''}`,
               },
               geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
             };
@@ -2392,16 +2393,21 @@
       // rather than once up front.
       function setupSpotClicks() {
         map.on('click', (e) => {
-          const hitBox = [[e.point.x - 16, e.point.y - 16], [e.point.x + 16, e.point.y + 16]];
-          const scanLayers = ['camp-spot-dot', 'camp-spot-label'].filter((id) => map.getLayer(id));
-          const savedLayers = ['saved-spot-dot', 'saved-spot-label'].filter((id) => map.getLayer(id));
-          if (scanLayers.length) {
-            const [scanned] = map.queryRenderedFeatures(hitBox, { layers: scanLayers });
-            if (scanned) return showScanResultCard(scanned);
+          // Matched against the real in-memory data (nearestByProjectedDistance)
+          // rather than queryRenderedFeatures — see that function's comment.
+          // Scan candidates get dropped on freshly-scanned, often steep
+          // terrain by design, so this is exactly the layer most exposed
+          // to the picking bug.
+          if (lastScanResults.size) {
+            const match = nearestByProjectedDistance(map, e.point, [...lastScanResults], ([, r]) => [r.lng, r.lat], 20);
+            if (match) {
+              const [scanId, r] = match;
+              return showScanResultCard({ properties: { scanId, topPick: !!r.topPick }, geometry: { type: 'Point', coordinates: [r.lng, r.lat] } });
+            }
           }
-          if (savedLayers.length) {
-            const [saved] = map.queryRenderedFeatures(hitBox, { layers: savedLayers });
-            if (saved) return showSavedSpotCard(saved);
+          if (savedSpots.length) {
+            const saved = nearestByProjectedDistance(map, e.point, savedSpots, (s) => s.coordinates, 20);
+            if (saved) return showSavedSpotCard({ properties: { id: saved.id, label: saved.label }, geometry: { type: 'Point', coordinates: saved.coordinates } });
           }
         });
       }
@@ -3148,6 +3154,28 @@
       }, coords);
     }
 
+    // 3D terrain elevates a point's rendered screen position off the flat
+    // plane it's defined at — the steeper the ground, the bigger the
+    // offset — but MapLibre's queryRenderedFeatures picking doesn't
+    // reliably follow that (documented upstream, unresolved: maplibre-gl-js
+    // issues #1075, #2994, #6563), so a real tap on a pin over steep
+    // terrain can silently miss. map.project() uses the same camera/terrain
+    // matrix as the actual render, so comparing its screen output straight
+    // against the click point sidesteps the picking bug entirely — for any
+    // point layer where we already hold the real lng/lat data in JS rather
+    // than only in a rendered tile.
+    function nearestByProjectedDistance(map, point, items, getLngLat, maxPx) {
+      let best = null, bestDist = Infinity;
+      for (const item of items) {
+        const lngLat = getLngLat(item);
+        if (!lngLat) continue;
+        const p = map.project(lngLat);
+        const d = Math.hypot(p.x - point.x, p.y - point.y);
+        if (d <= maxPx && d < bestDist) { bestDist = d; best = item; }
+      }
+      return best;
+    }
+
     // gemLayerId is passed in separately from style-derived layers: the gem
     // spots layer is added at runtime from a live Supabase query (see
     // addGemSpotsLayer below), not baked into style.json, so it's never in
@@ -3167,7 +3195,7 @@
         map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
       }
 
-      map.on('click', (e) => {
+      map.on('click', async (e) => {
         // Padded well past the actual pixel: circles render as small as
         // 3px radius at low zoom, and finger taps land several CSS px off
         // target on real phones, so an exact hit is unreliable on touch.
@@ -3177,9 +3205,14 @@
         ];
         // Gem spots are checked first: they're the smaller, denser layer and
         // most likely to sit on top of a rec-site dot at the same location.
+        // Matched via nearestByProjectedDistance rather than
+        // queryRenderedFeatures — gem spots are exactly the layer most
+        // likely to sit on steep, scenic 3D terrain where picking misses —
+        // using the same row data the layer itself was built from.
         if (gemLayers.length) {
-          const [gem] = map.queryRenderedFeatures(hitBox, { layers: gemLayers });
-          if (gem) return showGemSpotCard(gem);
+          const rows = await getSpotsRows();
+          const nearest = nearestByProjectedDistance(map, e.point, rows, (r) => [r.lon, r.lat], 20);
+          if (nearest) return showGemSpotCard({ properties: nearest, geometry: { type: 'Point', coordinates: [nearest.lon, nearest.lat] } });
         }
         if (recLayers.length) {
           const [rec] = map.queryRenderedFeatures(hitBox, { layers: recLayers });
