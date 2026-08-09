@@ -3620,7 +3620,7 @@
       openai: { label: 'ChatGPT (OpenAI)', defaultModel: 'gpt-4o-mini', hint: 'e.g. gpt-4o-mini, gpt-4o (needs a vision-capable model to use image upload)', needsBaseUrl: false, keyUrl: 'https://platform.openai.com/api-keys' },
       google: { label: 'Gemini (Google)', defaultModel: 'gemini-1.5-flash', hint: 'e.g. gemini-1.5-flash, gemini-1.5-pro', needsBaseUrl: false, keyUrl: 'https://aistudio.google.com/apikey' },
       groq: {
-        label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use llama-3.2-11b-vision-preview if you want image upload to work', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys',
+        label: 'Groq', defaultModel: 'llama-3.3-70b-versatile', hint: 'e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant — use qwen/qwen3.6-27b if you want image upload to work (Groq retired its older llama-3.2-*-vision-preview models)', needsBaseUrl: false, keyUrl: 'https://console.groq.com/keys',
         webSearchCostHint: 'Switches to Groq\'s "compound" system (web search, code execution, more) for this account. Their docs don\'t publish exact pricing/rate limits for it separately from normal models — check console.groq.com/settings/billing after enabling if that matters to you.',
       },
       custom: { label: 'Other (OpenAI-compatible)', defaultModel: '', hint: 'Model name your endpoint expects (Grok, Together, local Ollama, etc.) — image upload only works if that model supports vision', needsBaseUrl: true, keyUrl: null },
@@ -3842,8 +3842,14 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           // code execution, more) — same endpoint/request shape as a
           // normal model, just a different model string, so swap it in
           // for this call only rather than overwriting the user's saved
-          // model choice.
-          const groqSettings = settings.webSearch ? { ...settings, model: 'groq/compound' } : settings;
+          // model choice. But compound doesn't accept image input, so a
+          // reference-photo turn has to skip the swap and go out on
+          // whatever vision-capable model the user actually configured —
+          // otherwise every image message silently loses web search's
+          // model override to compound and gets rejected no matter which
+          // model is saved in settings.
+          const hasImage = internalMessages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image'));
+          const groqSettings = (settings.webSearch && !hasImage) ? { ...settings, model: 'groq/compound' } : settings;
           return callOpenAICompatible(groqSettings, system, internalMessages.map((m) => ({ ...m, content: toOpenAIContent(m.content) })), 'https://api.groq.com/openai/v1/chat/completions');
         }
         case 'custom':
@@ -4053,17 +4059,33 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
         showGemSpotCard(feature);
       }
 
+      // Phone camera photos routinely come in at 3000-4000px per side and
+      // several MB — as base64 in a chat request that's tens of thousands
+      // of tokens before the model even sees the spot table, easily
+      // blowing through low-tier rate limits (e.g. Groq's on-demand 8000
+      // TPM cap). Downscale through a canvas first; a vision model reads
+      // terrain/water/tree-cover cues just fine well under 1024px.
+      const AI_IMAGE_MAX_DIM = 1024;
       imageInput.onchange = () => {
         const file = imageInput.files?.[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = () => {
-          const dataUrl = reader.result;
-          const base64 = dataUrl.split(',')[1];
-          pendingImage = { mimeType: file.type || 'image/jpeg', base64, name: file.name };
-          imagePreviewImg.src = dataUrl;
-          imagePreviewName.textContent = file.name;
-          imagePreview.classList.add('show');
+          const img = new Image();
+          img.onload = () => {
+            const scale = Math.min(1, AI_IMAGE_MAX_DIM / Math.max(img.width, img.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(img.width * scale) || 1;
+            canvas.height = Math.round(img.height * scale) || 1;
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            const base64 = dataUrl.split(',')[1];
+            pendingImage = { mimeType: 'image/jpeg', base64, name: file.name };
+            imagePreviewImg.src = dataUrl;
+            imagePreviewName.textContent = file.name;
+            imagePreview.classList.add('show');
+          };
+          img.src = reader.result;
         };
         reader.readAsDataURL(file);
       };
@@ -4083,6 +4105,7 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
         else content.push({ type: 'text', text: 'Here is a reference photo of the kind of spot I want. What do you see, and which of our spots (or what kind of unlisted spot) matches it best?' });
         if (pendingImage) content.push({ type: 'image', source: { type: 'base64', media_type: pendingImage.mimeType, data: pendingImage.base64 } });
         history.push({ role: 'user', content: content.length === 1 && !pendingImage ? text : content });
+        const hadImage = !!pendingImage;
 
         textInput.value = '';
         pendingImage = null;
@@ -4111,9 +4134,19 @@ ${scanText ? `\nSCANNED CANDIDATES (this session's live terrain scan of the user
           // from the provider itself, there's no server-supplied message
           // to show, so say what to actually go check instead of
           // repeating the unhelpful raw text.
+          // A reference photo sent to a non-vision model gets rejected by
+          // the provider's own request validation before it ever reaches a
+          // model — the wording differs by provider/proxy ("content must
+          // be a string", "does not support image input", "invalid image
+          // url", etc.) but it only happens on image turns, so catch that
+          // whole class here instead of chasing each provider's exact text.
+          const looksLikeVisionRejection = hadImage
+            && /content\b.*\bmust be a string|does(?:n'| no)t support image|invalid[_ ]?image|image[_ ]?url.*invalid|vision/i.test(err.message || '');
           const msg = err.message === 'Failed to fetch'
             ? 'Could not reach the AI service at all. If you picked "Other", double-check the Base URL in AI Guide Settings → Advanced. Otherwise this is likely a network block on this connection.'
-            : err.message;
+            : looksLikeVisionRejection
+              ? `The model configured in AI Guide Settings ("${settings.model}") doesn't accept image input. Switch to a vision-capable model (e.g. gpt-4o/gpt-4o-mini, claude-sonnet-5, gemini-1.5-flash, or qwen/qwen3.6-27b on Groq) to use reference photos. Provider said: ${err.message}`
+              : err.message;
           const el = addBubble('error', `Something went wrong: ${msg}`);
           el.classList.add('error');
         } finally {
