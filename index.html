@@ -5109,11 +5109,21 @@
     // unabridged) blew straight through that on the very first message
     // (confirmed against the live API: "Request too large... Limit
     // 12000, Requested 38569"). Custom endpoints are unknown quantities,
-    // so treated just as conservatively. The big three providers have
-    // comfortably higher minimums, but still capped rather than
-    // uncapped, since token cost/latency scales with this regardless of
-    // provider and 287 spots will only grow over time.
-    const SPOTS_TOKEN_BUDGET = { anthropic: 20000, openai: 20000, google: 20000, groq: 5000, custom: 5000 };
+    // so treated just as conservatively.
+    //
+    // google used to get the same "comfortably higher minimum" treatment
+    // as anthropic/openai, on the assumption a paid-tier-shaped API would
+    // have paid-tier-shaped limits — wrong in practice: a free Google AI
+    // Studio key (the common, no-billing-required way people get a
+    // Gemini key, unlike Anthropic/OpenAI which gate the API behind
+    // billing setup) hit a real per-minute quota after just one exchange.
+    // The live usage graph confirmed why: ~20k input tokens per request,
+    // matching this budget almost exactly, because the (relevance-
+    // ranked, but still large) spot table gets resent in full on every
+    // single turn — there's no cross-request caching here. Lowered to
+    // match groq/custom's already-conservative budget rather than assume
+    // a "big three" provider is automatically headroom-safe.
+    const SPOTS_TOKEN_BUDGET = { anthropic: 20000, openai: 20000, google: 5000, groq: 5000, custom: 5000 };
     const approxTokens = (s) => Math.ceil(s.length / 4); // rough chars/4 heuristic, not a real tokenizer
 
     function spotSearchText(r) {
