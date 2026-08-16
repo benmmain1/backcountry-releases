@@ -1983,11 +1983,40 @@
         });
       }
 
+      // Downsamples the map's WebGL canvas onto a small 2D canvas and
+      // checks whether it's essentially a single dark color — i.e.
+      // nothing actually rendered there (camera inside/behind terrain,
+      // or tiles that never painted), as opposed to a legitimately dark
+      // but textured scene (shadowed forest, dusk lighting, etc.), which
+      // would have real pixel-to-pixel variance even if dim overall.
+      // Reads back through drawImage rather than gl.readPixels, so this
+      // also depends on preserveDrawingBuffer being set on the map (see
+      // its constructor option) — without that the buffer being read
+      // here could itself already be cleared.
+      function isRenderBlank() {
+        const probe = document.createElement('canvas');
+        probe.width = 32;
+        probe.height = 32;
+        const ctx = probe.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(map.getCanvas(), 0, 0, 32, 32);
+        const { data } = ctx.getImageData(0, 0, 32, 32);
+        let sum = 0;
+        let sumSq = 0;
+        const n = data.length / 4;
+        for (let i = 0; i < data.length; i += 4) {
+          const lum = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          sum += lum;
+          sumSq += lum * lum;
+        }
+        const mean = sum / n;
+        const variance = sumSq / n - mean * mean;
+        return mean < 10 && variance < 6;
+      }
+
       // Ground-level 3D terrain preview — see appendGeneratePreviewButton's
       // comment for the "why" (a real render of real elevation data, not a
-      // generative-AI guess). Places a free (non-orbiting) camera exactly
-      // at the coordinate and points it toward bestViewBearing, then
-      // captures the rendered canvas.
+      // generative-AI guess). Centers the orbit camera on the coordinate,
+      // points it toward bestViewBearing, and captures the canvas.
       //
       // This was originally written against maplibregl.FreeCameraOptions
       // (place the camera at an arbitrary 3D point, independent of the
@@ -2035,21 +2064,41 @@
           }
           const bearingDeg = bestViewBearing([lng, lat]) ?? 0;
 
-          // maxPitch is capped app-wide (see pitchCeilingForZoom near map
-          // init) — 80 is the real ceiling at this zoom, not just a
-          // number picked here, so asking for more would just get
-          // silently clamped anyway.
-          map.jumpTo({ center: [lng, lat], zoom: 17.5, pitch: 80, bearing: bearingDeg });
+          // A close, steep view (attempt 0) can genuinely have nothing to
+          // show: at zoom 17.5/pitch 80 the camera sits only ~250m up and
+          // ~1.4km back from center (basic perspective-camera geometry —
+          // altitude/setback both shrink fast as zoom climbs), which in
+          // real mountain terrain can put it behind/inside a ridge,
+          // rendering a genuinely empty frame — not a loading race, an
+          // empty one. There's no fixed zoom/pitch that's safe for every
+          // spot's actual surrounding terrain, which this app has no way
+          // to know in advance, so instead of guessing one constant,
+          // back off step by step and check what actually rendered.
+          // The last candidate reuses the exact zoom already confirmed
+          // loaded above (waitForElevationReady only returns once real
+          // terrain data exists there), so it's the most likely to
+          // produce *something* even if the close-in attempts don't.
+          const cameraCandidates = [
+            { zoom: 17.5, pitch: 80 },
+            { zoom: 16, pitch: 68 },
+            { zoom: 15, pitch: 55 },
+          ];
 
-          await waitForRenderSettle(5000);
-          // A further fixed wait beyond that: the camera just jumped to a
-          // totally different angle, and newly-visible tiles/hillshade
-          // can still be finishing their fade-in a frame or two after
-          // MapLibre settles (or after the best-effort budget above just
-          // runs out).
-          await new Promise((resolve) => setTimeout(resolve, 400));
-
-          const dataUrl = map.getCanvas().toDataURL('image/jpeg', 0.92);
+          let dataUrl = null;
+          for (let i = 0; i < cameraCandidates.length; i++) {
+            const { zoom, pitch } = cameraCandidates[i];
+            map.jumpTo({ center: [lng, lat], zoom, pitch, bearing: bearingDeg });
+            await waitForRenderSettle(5000);
+            // A further fixed wait beyond that: the camera just jumped to
+            // a totally different angle, and newly-visible tiles/
+            // hillshade can still be finishing their fade-in a frame or
+            // two after MapLibre settles (or after the best-effort
+            // budget above just runs out).
+            await new Promise((resolve) => setTimeout(resolve, 400));
+            const candidateUrl = map.getCanvas().toDataURL('image/jpeg', 0.92);
+            if (!isRenderBlank()) { dataUrl = candidateUrl; break; }
+            dataUrl = candidateUrl; // keep the last attempt as a fallback even if every candidate looked blank
+          }
           return { dataUrl, bearingDeg, groundElevM };
         } finally {
           // Explicitly rebuilds the camera state saved above rather than
