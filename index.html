@@ -1921,27 +1921,26 @@
         return rays.reduce((best, r) => (r.clearM > best.clearM ? r : best), rays[0]).bearingDeg;
       }
 
-      // Waits for the map to have everything it needs loaded, capped at
-      // timeoutMs. Root-caused live (see the 15s timeout this replaces,
-      // and its own commit): a plain `map.once('idle', resolve)` hung
-      // forever whenever the camera jump right before it turned out to be
-      // a no-op — e.g. generateSpotPreview jumping to a pin the map was
-      // already sitting on/near, which is exactly the common case (you
-      // just dropped the pin, or the AI just flew you there). If nothing
-      // changed, MapLibre has nothing new to become idle *from*, so
-      // 'idle' never re-fires and a listener registered after the fact
-      // waits for an event that isn't coming.
-      //
-      // map.loaded() covers the case where the map is already fully
-      // settled the moment this is called (resolves immediately, no
-      // waiting at all). The poll interval covers the messier middle
-      // case — camera genuinely moved but 'idle' still doesn't fire for
-      // some reason this environment couldn't diagnose further (no live
-      // browser to attach devtools to) — by checking loaded() directly
-      // every 300ms instead of trusting the event alone. 'idle' itself
-      // stays wired as the fast path when it does fire normally.
-      function waitForIdle(timeoutMs) {
-        return new Promise((resolve, reject) => {
+      // Two earlier fixes here (a `map.once('idle', resolve)` with no
+      // timeout, then a version that also checked `map.loaded()`
+      // immediately + polled it) both still hung/timed out live, even
+      // for a pin the map was already centered on. That ruled out pure
+      // event-timing as the cause: `map.loaded()` checks *every* source
+      // on the map, not just what this render actually needs, so it can
+      // sit false forever because of something totally unrelated (a
+      // source that's perpetually mid-fetch/retry) — and separately, the
+      // ground-level free camera further down asks for terrain/imagery
+      // tiles all the way to the horizon, which for a bounded regional
+      // PMTiles pack can mean tiles outside the pack's coverage that will
+      // never resolve. Gating on global "is everything loaded" is the
+      // wrong condition in both cases. So this no longer gates on that at
+      // all: it's a bounded best-effort wait that resolves on 'idle' or
+      // loaded() if either happens, but always resolves by budgetMs
+      // regardless — the actual correctness gate is
+      // waitForElevationReady below, which checks the one thing this
+      // render actually depends on.
+      function waitForRenderSettle(budgetMs) {
+        return new Promise((resolve) => {
           if (map.loaded()) { resolve(); return; }
           const finish = () => {
             clearTimeout(timeout);
@@ -1952,11 +1951,25 @@
           const onIdle = () => finish();
           map.once('idle', onIdle);
           const poll = setInterval(() => { if (map.loaded()) finish(); }, 300);
-          const timeout = setTimeout(() => {
-            clearInterval(poll);
-            map.off('idle', onIdle);
-            reject(new Error('Map did not finish loading in time'));
-          }, timeoutMs);
+          const timeout = setTimeout(finish, budgetMs);
+        });
+      }
+
+      // The one thing generateSpotPreview genuinely can't proceed
+      // without: real elevation at the target coordinate. Polls
+      // absoluteElevation directly instead of trusting the map's global
+      // loaded state (see waitForRenderSettle above for why that's not a
+      // reliable signal) — resolves with the elevation as soon as it's
+      // available, or null if it still isn't after timeoutMs.
+      function waitForElevationReady([lng, lat], timeoutMs) {
+        return new Promise((resolve) => {
+          const start = Date.now();
+          const check = () => {
+            const elev = absoluteElevation([lng, lat]);
+            if (elev != null || Date.now() - start >= timeoutMs) { resolve(elev); return; }
+            setTimeout(check, 250);
+          };
+          check();
         });
       }
 
@@ -1996,9 +2009,9 @@
           if (!terrainOn) setTerrainMode(true);
           map.stop();
           map.jumpTo({ center: [lng, lat], zoom: 15 });
-          await waitForIdle(15000);
+          await waitForRenderSettle(4000);
 
-          const groundElevM = absoluteElevation([lng, lat]);
+          const groundElevM = await waitForElevationReady([lng, lat], 10000);
           if (groundElevM == null) {
             throw new Error('No terrain data loaded here yet — try again in a moment, or pan closer first.');
           }
@@ -2013,7 +2026,14 @@
           const camera = new maplibregl.FreeCameraOptions();
           camera.position = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], cameraElevM);
           if (typeof camera.setPitchBearing === 'function') {
-            camera.setPitchBearing(90, bearingDeg);
+            // 85, not a literal 90: dead level with the horizon means the
+            // ground plane extends to infinity in view, which can mean
+            // requesting terrain/imagery tiles arbitrarily far away (and,
+            // for a bounded regional PMTiles pack, tiles outside its
+            // coverage that don't exist). 85 still reads as "standing and
+            // looking out," not down, while keeping the visible ground
+            // footprint — and so the tile request footprint — finite.
+            camera.setPitchBearing(85, bearingDeg);
           } else {
             // Older/alternate builds without setPitchBearing — fall back
             // to looking at a nearby point along the same bearing. Not
@@ -2030,11 +2050,12 @@
           }
           map.setFreeCameraOptions(camera);
 
-          await waitForIdle(15000);
-          // A second, fixed wait beyond 'idle': the camera just jumped to
-          // a totally different angle, and newly-visible tiles/hillshade
+          await waitForRenderSettle(5000);
+          // A further fixed wait beyond that: the camera just jumped to a
+          // totally different angle, and newly-visible tiles/hillshade
           // can still be finishing their fade-in a frame or two after
-          // MapLibre considers the map idle.
+          // MapLibre settles (or after the best-effort budget above just
+          // runs out).
           await new Promise((resolve) => setTimeout(resolve, 400));
 
           const dataUrl = map.getCanvas().toDataURL('image/jpeg', 0.92);
