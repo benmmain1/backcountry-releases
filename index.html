@@ -425,6 +425,9 @@
   .info-gallery a { flex: none; scroll-snap-align: start; border-radius: 10px; overflow: hidden; display: block; }
   .info-gallery img { display: block; height: 140px; width: auto; max-width: 220px; object-fit: cover; background: var(--border); }
   .info-gallery-attrib { font-size: 10.5px; color: var(--muted); margin: -6px 0 12px; }
+  .preview-3d-wrap { margin: 0 0 12px; }
+  .preview-3d-wrap .panel-btn { width: 100%; }
+  .preview-3d-image { display: block; width: 100%; height: 180px; object-fit: cover; border-radius: 10px; background: var(--border); margin: 0 0 6px; }
   .info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
   .info-badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--border); white-space: nowrap; }
   .info-badge.status-open { background: rgba(63,125,84,.16); color: var(--accent); }
@@ -1853,14 +1856,21 @@
       // horizon check (no real full-raster viewshed), but it correctly
       // tells boxed-in terrain (walls close in every direction) apart
       // from a rim or bench with a valley falling away in front of it.
-      function opennessMeters([lng, lat]) {
+      // Shared by opennessMeters (below) and the 3D preview render
+      // (generateSpotPreview) — both need the same per-direction horizon
+      // check, one to average it into a single number, the other to find
+      // which single direction it's actually worth pointing a camera at.
+      // Splitting this out (rather than opennessMeters just discarding the
+      // per-ray data) is what makes "render toward the real best view"
+      // possible instead of guessing a bearing.
+      function castOpennessRays([lng, lat]) {
         const origin = absoluteElevation([lng, lat]);
         if (origin == null) return null;
         const eyeLevel = origin + 1.7;
         const { perDegLat, perDegLng } = metersToDegrees(lat);
-        let total = 0;
+        const rays = [];
         for (let r = 0; r < RAY_COUNT; r++) {
-          const angle = (r / RAY_COUNT) * Math.PI * 2;
+          const angle = (r / RAY_COUNT) * Math.PI * 2; // clockwise from north — matches MapLibre's bearing convention
           const dLat = Math.cos(angle), dLng = Math.sin(angle);
           let clear = 0;
           for (let dist = RAY_STEP_M; dist <= RAY_MAX_M; dist += RAY_STEP_M) {
@@ -1870,10 +1880,109 @@
             if (elevation == null || elevation > eyeLevel) break;
             clear = dist;
           }
-          total += clear;
+          rays.push({ bearingDeg: (angle * 180) / Math.PI, clearM: clear });
         }
-        return total / RAY_COUNT;
+        return rays;
       }
+      function opennessMeters([lng, lat]) {
+        const rays = castOpennessRays([lng, lat]);
+        if (!rays) return null;
+        return rays.reduce((sum, r) => sum + r.clearM, 0) / rays.length;
+      }
+      // The compass bearing (degrees, clockwise from north) of whichever
+      // ray saw the longest clear sightline before the terrain rose above
+      // eye level — i.e. the direction actually worth looking, derived
+      // from the same real elevation data as the openness score itself,
+      // not guessed.
+      function bestViewBearing([lng, lat]) {
+        const rays = castOpennessRays([lng, lat]);
+        if (!rays) return null;
+        return rays.reduce((best, r) => (r.clearM > best.clearM ? r : best), rays[0]).bearingDeg;
+      }
+
+      // Ground-level 3D terrain preview — see appendGeneratePreviewButton's
+      // comment for the "why" (a real render of real elevation data, not a
+      // generative-AI guess). Places a free (non-orbiting) camera exactly
+      // at the coordinate at eye height and points it toward
+      // bestViewBearing, then captures the rendered canvas.
+      //
+      // Both camera.position and the pitch/bearing orientation are used
+      // (via FreeCameraOptions.setPitchBearing) rather than
+      // camera.lookAtPoint(targetLngLat) — lookAtPoint's target has no
+      // altitude of its own to give it (LngLat is 2D), and this app's
+      // terrain sits thousands of feet above sea level, so a target
+      // resolved at elevation 0 would point the camera almost straight
+      // down instead of toward the horizon. pitch/bearing avoids needing
+      // a target altitude at all: pitch 90° is level with the horizon in
+      // MapLibre's camera convention (0° is straight down), same as the
+      // normal camera's own pitch.
+      async function generateSpotPreview([lng, lat], label) {
+        // Captured before anything below moves the camera — otherwise
+        // this "previous" state is actually the just-jumped-to pin
+        // location a few lines down, and the finally block below would
+        // "restore" the map to the pin instead of back to wherever the
+        // user actually was when they tapped the button.
+        const previousCenter = map.getCenter();
+        const previousZoom = map.getZoom();
+        const previousPitch = map.getPitch();
+        const previousBearing = map.getBearing();
+
+        if (!terrainOn) setTerrainMode(true);
+        map.stop();
+        map.jumpTo({ center: [lng, lat], zoom: 15 });
+        await new Promise((resolve) => map.once('idle', resolve));
+
+        const groundElevM = absoluteElevation([lng, lat]);
+        if (groundElevM == null) {
+          throw new Error('No terrain data loaded here yet — try again in a moment, or pan closer first.');
+        }
+        const bearingDeg = bestViewBearing([lng, lat]) ?? 0;
+        const eyeHeightM = groundElevM + 1.7;
+        // The mesh itself is drawn exaggerated (see TERRAIN_EXAGGERATION) —
+        // the camera's position needs to be in that same rendered space,
+        // or it ends up floating above/sunk below where the visible ground
+        // actually is.
+        const cameraElevM = eyeHeightM * TERRAIN_EXAGGERATION;
+
+        try {
+          const camera = new maplibregl.FreeCameraOptions();
+          camera.position = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], cameraElevM);
+          if (typeof camera.setPitchBearing === 'function') {
+            camera.setPitchBearing(90, bearingDeg);
+          } else {
+            // Older/alternate builds without setPitchBearing — fall back
+            // to looking at a nearby point along the same bearing. Not
+            // elevation-matched (see the function doc comment above), so
+            // this fallback path may look tilted; the primary path above
+            // is what every current MapLibre GL JS release since the free
+            // camera API shipped actually supports.
+            const bearingRad = (bearingDeg * Math.PI) / 180;
+            const { perDegLat, perDegLng } = metersToDegrees(lat);
+            camera.lookAtPoint([
+              lng + (Math.sin(bearingRad) * 300) / perDegLng,
+              lat + (Math.cos(bearingRad) * 300) / perDegLat,
+            ]);
+          }
+          map.setFreeCameraOptions(camera);
+
+          await new Promise((resolve) => map.once('idle', resolve));
+          // A second, fixed wait beyond 'idle': the camera just jumped to
+          // a totally different angle, and newly-visible tiles/hillshade
+          // can still be finishing their fade-in a frame or two after
+          // MapLibre considers the map idle.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+
+          const dataUrl = map.getCanvas().toDataURL('image/jpeg', 0.92);
+          return { dataUrl, bearingDeg, groundElevM };
+        } finally {
+          // FreeCameraOptions has no "restore" of its own — rebuild the
+          // normal top-down camera explicitly from what was saved above.
+          // Runs even on failure so a thrown error never leaves the map
+          // stuck at ground level.
+          map.jumpTo({ center: previousCenter, zoom: previousZoom, pitch: previousPitch, bearing: previousBearing });
+        }
+      }
+      generateSpotPreviewFn = generateSpotPreview; // exposes it to appendGeneratePreviewButton, defined at top level
 
       // Reads the Scan Preferences checkboxes to steer what counts as a
       // good candidate — water/wooded/panoramic/etc. `backcountry` (only
@@ -4186,6 +4295,53 @@
       }).catch(() => gallery.remove());
     }
 
+    // Adds a "Generate 3D preview" control below the real-photo gallery on
+    // any card with coordinates. Deliberately built and labeled to never
+    // be mistaken for a photo: real photos (Commons/Mapillary/curated)
+    // show whatever's actually near the coordinate, which for a
+    // freshly-scanned or AI-recommended pin is often just the general
+    // area (a lake, a trailhead) rather than the exact spot. This renders
+    // the real terrain mesh already loaded for 3D mode from a camera
+    // placed exactly at the pin at eye height, facing whichever direction
+    // castOpennessRays found has the longest actual sightline — grounded
+    // in the same measured elevation data the scanner itself uses, not a
+    // generative-AI guess at what the spot might look like (which risks
+    // showing a boulder field as grass, or a cliff as a gentle slope —
+    // exactly the kind of confident-looking wrongness this app avoids
+    // everywhere else, see the AI Guide's own "never fabricate" rules).
+    function appendGeneratePreviewButton(body, coord, label) {
+      const wrap = document.createElement('div');
+      wrap.className = 'preview-3d-wrap';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'panel-btn secondary';
+      btn.textContent = '🏔️ Generate 3D preview of this exact spot';
+      wrap.append(btn);
+      body.append(wrap);
+
+      btn.onclick = async () => {
+        if (!generateSpotPreviewFn) return;
+        btn.disabled = true;
+        btn.textContent = 'Rendering…';
+        try {
+          const { dataUrl, bearingDeg, groundElevM } = await generateSpotPreviewFn(coord, label);
+          wrap.innerHTML = '';
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.alt = `Rendered 3D terrain preview facing ${Math.round(bearingDeg)}° from ${label || 'this spot'}`;
+          img.className = 'preview-3d-image';
+          const caption = document.createElement('p');
+          caption.className = 'info-gallery-attrib';
+          caption.textContent = `Rendered from this app's real terrain data (elevation ${Math.round(groundElevM * 3.28084).toLocaleString()} ft, facing ${Math.round(bearingDeg)}°) — not a photo, and not a substitute for seeing the actual spot. Ground cover, rocks, and vegetation aren't represented.`;
+          wrap.append(img, caption);
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = '🏔️ Generate 3D preview of this exact spot';
+          say(`Couldn't render a preview: ${err.message || err}`, 'error');
+        }
+      };
+    }
+
     let infoCardToken = 0;
     // Set once start() creates the map — the AI guide is wired up
     // independently of map load (so its settings UI works immediately),
@@ -4212,6 +4368,7 @@
     // not defined the first time anyone taps a recommended spot.
     let appendSaveButtonFn = null;
     let clearPendingPinFn = null; // clears a dropped-but-unsaved pin's temp marker; called from the top-level closeSheets()
+    let generateSpotPreviewFn = null; // same pattern, for appendGeneratePreviewButton's "Generate 3D preview" card button
     let lastScanContextTextRef = ''; // mirrors runCampScan's lastScanContextText — initAIGuide() lives outside start(), so it reads this instead
 
     // Reuses aiBtn's own click handler (wired up in initAIGuide) rather
@@ -4236,7 +4393,10 @@
       const body = document.getElementById('info-body');
       body.innerHTML = '';
       buildBody(body);
-      if (photoCoord) attachPhotoGallery(body, photoCoord, token, curatedPhoto);
+      if (photoCoord) {
+        attachPhotoGallery(body, photoCoord, token, curatedPhoto);
+        appendGeneratePreviewButton(body, photoCoord, title);
+      }
       document.getElementById('info-ask-ai').onclick = () => askAIAbout(title);
       closeSheets();
       infoSheet.classList.add('open');
