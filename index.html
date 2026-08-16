@@ -1357,6 +1357,16 @@
         maxPitch: 80,
         hash: true,
         attributionControl: { compact: true },
+        // Needed for generateSpotPreview's map.getCanvas().toDataURL()
+        // capture: without this, the browser is free to clear/swap the
+        // WebGL drawing buffer right after each frame is composited, so
+        // reading it back on any later tick (which is exactly what that
+        // capture does, after an await) gets a cleared buffer — a solid
+        // black image — even though the frame rendered correctly. This
+        // is what actually produced the black preview live; the render
+        // pipeline itself (terrain load, camera placement, canvas
+        // capture call) was already working.
+        preserveDrawingBuffer: true,
       });
       mapRef = map; // exposes the map instance to the AI guide, which is set up outside start()
 
