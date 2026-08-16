@@ -428,6 +428,27 @@
   .preview-3d-wrap { margin: 0 0 12px; }
   .preview-3d-wrap .panel-btn { width: 100%; }
   .preview-3d-image { display: block; width: 100%; height: 180px; object-fit: cover; border-radius: 10px; background: var(--border); margin: 0 0 6px; }
+  .preview-3d-skeleton {
+    height: 180px; border-radius: 10px; margin: 0 0 8px;
+    background: linear-gradient(100deg, var(--border) 30%, var(--bg) 50%, var(--border) 70%);
+    background-size: 220% 100%;
+    animation: preview-3d-shimmer 1.5s ease-in-out infinite;
+  }
+  @keyframes preview-3d-shimmer {
+    0% { background-position: 120% 0; }
+    100% { background-position: -20% 0; }
+  }
+  .preview-3d-status {
+    font-size: 12.5px; color: var(--muted); text-align: center; margin: 0 0 12px;
+    animation: preview-3d-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes preview-3d-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .preview-3d-skeleton, .preview-3d-status { animation: none; }
+  }
   .info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
   .info-badge { font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--border); white-space: nowrap; }
   .info-badge.status-open { background: rgba(63,125,84,.16); color: var(--accent); }
@@ -1900,6 +1921,23 @@
         return rays.reduce((best, r) => (r.clearM > best.clearM ? r : best), rays[0]).bearingDeg;
       }
 
+      // Waits for the map's 'idle' event, but never longer than timeoutMs —
+      // a plain `map.once('idle', resolve)` with nothing bounding it is
+      // exactly what turned into a multi-minute stuck "Rendering…" button
+      // in practice (confirmed live: 'idle' never fired after the camera
+      // jump, for reasons that couldn't be diagnosed further without a
+      // live browser — see generateSpotPreview's own verification note).
+      // Timing out and throwing at least turns "hung forever with no
+      // feedback" into "fails after a bounded wait with a clear message,"
+      // the same fix already applied to the AI scan/NLCD network calls
+      // elsewhere in this file.
+      function waitForIdle(timeoutMs) {
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Map did not finish loading in time')), timeoutMs);
+          map.once('idle', () => { clearTimeout(timeout); resolve(); });
+        });
+      }
+
       // Ground-level 3D terrain preview — see appendGeneratePreviewButton's
       // comment for the "why" (a real render of real elevation data, not a
       // generative-AI guess). Places a free (non-orbiting) camera exactly
@@ -1927,24 +1965,29 @@
         const previousPitch = map.getPitch();
         const previousBearing = map.getBearing();
 
-        if (!terrainOn) setTerrainMode(true);
-        map.stop();
-        map.jumpTo({ center: [lng, lat], zoom: 15 });
-        await new Promise((resolve) => map.once('idle', resolve));
-
-        const groundElevM = absoluteElevation([lng, lat]);
-        if (groundElevM == null) {
-          throw new Error('No terrain data loaded here yet — try again in a moment, or pan closer first.');
-        }
-        const bearingDeg = bestViewBearing([lng, lat]) ?? 0;
-        const eyeHeightM = groundElevM + 1.7;
-        // The mesh itself is drawn exaggerated (see TERRAIN_EXAGGERATION) —
-        // the camera's position needs to be in that same rendered space,
-        // or it ends up floating above/sunk below where the visible ground
-        // actually is.
-        const cameraElevM = eyeHeightM * TERRAIN_EXAGGERATION;
-
+        // Everything that touches the camera lives inside this try, not
+        // just the free-camera part — the earlier version left the
+        // initial jumpTo-to-pin's idle wait outside the try/finally, so a
+        // failure there skipped the restore entirely and left the map
+        // stuck at the pin instead of back where the user was.
         try {
+          if (!terrainOn) setTerrainMode(true);
+          map.stop();
+          map.jumpTo({ center: [lng, lat], zoom: 15 });
+          await waitForIdle(15000);
+
+          const groundElevM = absoluteElevation([lng, lat]);
+          if (groundElevM == null) {
+            throw new Error('No terrain data loaded here yet — try again in a moment, or pan closer first.');
+          }
+          const bearingDeg = bestViewBearing([lng, lat]) ?? 0;
+          const eyeHeightM = groundElevM + 1.7;
+          // The mesh itself is drawn exaggerated (see TERRAIN_EXAGGERATION)
+          // — the camera's position needs to be in that same rendered
+          // space, or it ends up floating above/sunk below where the
+          // visible ground actually is.
+          const cameraElevM = eyeHeightM * TERRAIN_EXAGGERATION;
+
           const camera = new maplibregl.FreeCameraOptions();
           camera.position = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], cameraElevM);
           if (typeof camera.setPitchBearing === 'function') {
@@ -1965,7 +2008,7 @@
           }
           map.setFreeCameraOptions(camera);
 
-          await new Promise((resolve) => map.once('idle', resolve));
+          await waitForIdle(15000);
           // A second, fixed wait beyond 'idle': the camera just jumped to
           // a totally different angle, and newly-visible tiles/hillshade
           // can still be finishing their fade-in a frame or two after
@@ -1977,8 +2020,8 @@
         } finally {
           // FreeCameraOptions has no "restore" of its own — rebuild the
           // normal top-down camera explicitly from what was saved above.
-          // Runs even on failure so a thrown error never leaves the map
-          // stuck at ground level.
+          // Runs even on failure/timeout so a hung or thrown render never
+          // leaves the map stuck at ground level.
           map.jumpTo({ center: previousCenter, zoom: previousZoom, pitch: previousPitch, bearing: previousBearing });
         }
       }
@@ -4309,22 +4352,54 @@
     // showing a boulder field as grass, or a cliff as a gentle slope —
     // exactly the kind of confident-looking wrongness this app avoids
     // everywhere else, see the AI Guide's own "never fabricate" rules).
+    const GENERATE_PREVIEW_LABEL = '🏔️ Generate 3D preview of this exact spot';
+    // Rotating status lines while a render is in flight — same idea as the
+    // AI Guide's "Thinking…"/"Scanning terrain…" swap, just with more than
+    // one line since this can take a few seconds (camera jump + tile load
+    // + a settle wait) and a single static word reads as stalled well
+    // before the 15s timeout actually kicks in.
+    const PREVIEW_STATUS_STEPS = [
+      'Loading terrain data…',
+      'Positioning camera at the spot…',
+      'Rendering the view…',
+    ];
     function appendGeneratePreviewButton(body, coord, label) {
       const wrap = document.createElement('div');
       wrap.className = 'preview-3d-wrap';
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'panel-btn secondary';
-      btn.textContent = '🏔️ Generate 3D preview of this exact spot';
-      wrap.append(btn);
       body.append(wrap);
 
-      btn.onclick = async () => {
+      function renderIdle() {
+        wrap.innerHTML = '';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'panel-btn secondary';
+        btn.textContent = GENERATE_PREVIEW_LABEL;
+        btn.onclick = renderLoading;
+        wrap.append(btn);
+      }
+
+      function renderLoading() {
         if (!generateSpotPreviewFn) return;
-        btn.disabled = true;
-        btn.textContent = 'Rendering…';
-        try {
-          const { dataUrl, bearingDeg, groundElevM } = await generateSpotPreviewFn(coord, label);
+        wrap.innerHTML = '';
+        const skeleton = document.createElement('div');
+        skeleton.className = 'preview-3d-skeleton';
+        const status = document.createElement('p');
+        status.className = 'preview-3d-status';
+        status.textContent = PREVIEW_STATUS_STEPS[0];
+        wrap.append(skeleton, status);
+
+        // Cycles through PREVIEW_STATUS_STEPS while the real render is in
+        // flight — purely cosmetic (it doesn't know the actual stage the
+        // promise below is in), same honest-cosmetic spirit as any
+        // "still working" indicator that can't observe real progress.
+        let step = 0;
+        const stepTimer = setInterval(() => {
+          step = (step + 1) % PREVIEW_STATUS_STEPS.length;
+          status.textContent = PREVIEW_STATUS_STEPS[step];
+        }, 1600);
+
+        generateSpotPreviewFn(coord, label).then(({ dataUrl, bearingDeg, groundElevM }) => {
+          clearInterval(stepTimer);
           wrap.innerHTML = '';
           const img = document.createElement('img');
           img.src = dataUrl;
@@ -4334,12 +4409,14 @@
           caption.className = 'info-gallery-attrib';
           caption.textContent = `Rendered from this app's real terrain data (elevation ${Math.round(groundElevM * 3.28084).toLocaleString()} ft, facing ${Math.round(bearingDeg)}°) — not a photo, and not a substitute for seeing the actual spot. Ground cover, rocks, and vegetation aren't represented.`;
           wrap.append(img, caption);
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = '🏔️ Generate 3D preview of this exact spot';
+        }).catch((err) => {
+          clearInterval(stepTimer);
+          renderIdle();
           say(`Couldn't render a preview: ${err.message || err}`, 'error');
-        }
-      };
+        });
+      }
+
+      renderIdle();
     }
 
     let infoCardToken = 0;
