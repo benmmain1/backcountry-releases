@@ -1976,19 +1976,27 @@
       // Ground-level 3D terrain preview — see appendGeneratePreviewButton's
       // comment for the "why" (a real render of real elevation data, not a
       // generative-AI guess). Places a free (non-orbiting) camera exactly
-      // at the coordinate at eye height and points it toward
-      // bestViewBearing, then captures the rendered canvas.
+      // at the coordinate and points it toward bestViewBearing, then
+      // captures the rendered canvas.
       //
-      // Both camera.position and the pitch/bearing orientation are used
-      // (via FreeCameraOptions.setPitchBearing) rather than
-      // camera.lookAtPoint(targetLngLat) — lookAtPoint's target has no
-      // altitude of its own to give it (LngLat is 2D), and this app's
-      // terrain sits thousands of feet above sea level, so a target
-      // resolved at elevation 0 would point the camera almost straight
-      // down instead of toward the horizon. pitch/bearing avoids needing
-      // a target altitude at all: pitch 90° is level with the horizon in
-      // MapLibre's camera convention (0° is straight down), same as the
-      // normal camera's own pitch.
+      // This was originally written against maplibregl.FreeCameraOptions
+      // (place the camera at an arbitrary 3D point, independent of the
+      // normal orbit model) — confirmed live and by inspecting the
+      // pinned unpkg bundle directly that this build of MapLibre GL JS
+      // simply doesn't have that API at all: no FreeCameraOptions class,
+      // no map.setFreeCameraOptions, nothing (that's a Mapbox GL JS v2+
+      // addition that MapLibre's open-source fork never carried over).
+      // `new maplibregl.FreeCameraOptions()` was throwing
+      // "is not a constructor" every time this ran, which the two prior
+      // rounds of waitForIdle fixes never actually reached — this app
+      // only has the standard orbit camera to work with: center is the
+      // ground point being looked *at*, and the camera itself sits
+      // behind/above it, offset by zoom and tilted by pitch. So instead
+      // of "camera stands at the pin," this centers the pin, sets
+      // bearing to the best view direction, and pushes zoom/pitch high
+      // enough that the camera ends up close in and near-level — a
+      // close aerial-angle view of the spot, not a literal eye-height
+      // placement, but as close as this camera model can get.
       async function generateSpotPreview([lng, lat], label) {
         // Captured before anything below moves the camera — otherwise
         // this "previous" state is actually the just-jumped-to pin
@@ -2000,11 +2008,11 @@
         const previousPitch = map.getPitch();
         const previousBearing = map.getBearing();
 
-        // Everything that touches the camera lives inside this try, not
-        // just the free-camera part — the earlier version left the
-        // initial jumpTo-to-pin's idle wait outside the try/finally, so a
-        // failure there skipped the restore entirely and left the map
-        // stuck at the pin instead of back where the user was.
+        // Everything that touches the camera lives inside this try — an
+        // earlier version left the initial jumpTo-to-pin's idle wait
+        // outside the try/finally, so a failure there skipped the
+        // restore entirely and left the map stuck at the pin instead of
+        // back where the user was.
         try {
           if (!terrainOn) setTerrainMode(true);
           map.stop();
@@ -2016,39 +2024,12 @@
             throw new Error('No terrain data loaded here yet — try again in a moment, or pan closer first.');
           }
           const bearingDeg = bestViewBearing([lng, lat]) ?? 0;
-          const eyeHeightM = groundElevM + 1.7;
-          // The mesh itself is drawn exaggerated (see TERRAIN_EXAGGERATION)
-          // — the camera's position needs to be in that same rendered
-          // space, or it ends up floating above/sunk below where the
-          // visible ground actually is.
-          const cameraElevM = eyeHeightM * TERRAIN_EXAGGERATION;
 
-          const camera = new maplibregl.FreeCameraOptions();
-          camera.position = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], cameraElevM);
-          if (typeof camera.setPitchBearing === 'function') {
-            // 85, not a literal 90: dead level with the horizon means the
-            // ground plane extends to infinity in view, which can mean
-            // requesting terrain/imagery tiles arbitrarily far away (and,
-            // for a bounded regional PMTiles pack, tiles outside its
-            // coverage that don't exist). 85 still reads as "standing and
-            // looking out," not down, while keeping the visible ground
-            // footprint — and so the tile request footprint — finite.
-            camera.setPitchBearing(85, bearingDeg);
-          } else {
-            // Older/alternate builds without setPitchBearing — fall back
-            // to looking at a nearby point along the same bearing. Not
-            // elevation-matched (see the function doc comment above), so
-            // this fallback path may look tilted; the primary path above
-            // is what every current MapLibre GL JS release since the free
-            // camera API shipped actually supports.
-            const bearingRad = (bearingDeg * Math.PI) / 180;
-            const { perDegLat, perDegLng } = metersToDegrees(lat);
-            camera.lookAtPoint([
-              lng + (Math.sin(bearingRad) * 300) / perDegLng,
-              lat + (Math.cos(bearingRad) * 300) / perDegLat,
-            ]);
-          }
-          map.setFreeCameraOptions(camera);
+          // maxPitch is capped app-wide (see pitchCeilingForZoom near map
+          // init) — 80 is the real ceiling at this zoom, not just a
+          // number picked here, so asking for more would just get
+          // silently clamped anyway.
+          map.jumpTo({ center: [lng, lat], zoom: 17.5, pitch: 80, bearing: bearingDeg });
 
           await waitForRenderSettle(5000);
           // A further fixed wait beyond that: the camera just jumped to a
@@ -2061,10 +2042,10 @@
           const dataUrl = map.getCanvas().toDataURL('image/jpeg', 0.92);
           return { dataUrl, bearingDeg, groundElevM };
         } finally {
-          // FreeCameraOptions has no "restore" of its own — rebuild the
-          // normal top-down camera explicitly from what was saved above.
-          // Runs even on failure/timeout so a hung or thrown render never
-          // leaves the map stuck at ground level.
+          // Explicitly rebuilds the camera state saved above rather than
+          // relying on anything implicit. Runs even on failure/timeout so
+          // a thrown render never leaves the map stuck at the close-in,
+          // high-pitch preview angle.
           map.jumpTo({ center: previousCenter, zoom: previousZoom, pitch: previousPitch, bearing: previousBearing });
         }
       }
