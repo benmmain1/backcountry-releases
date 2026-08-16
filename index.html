@@ -1921,20 +1921,42 @@
         return rays.reduce((best, r) => (r.clearM > best.clearM ? r : best), rays[0]).bearingDeg;
       }
 
-      // Waits for the map's 'idle' event, but never longer than timeoutMs —
-      // a plain `map.once('idle', resolve)` with nothing bounding it is
-      // exactly what turned into a multi-minute stuck "Rendering…" button
-      // in practice (confirmed live: 'idle' never fired after the camera
-      // jump, for reasons that couldn't be diagnosed further without a
-      // live browser — see generateSpotPreview's own verification note).
-      // Timing out and throwing at least turns "hung forever with no
-      // feedback" into "fails after a bounded wait with a clear message,"
-      // the same fix already applied to the AI scan/NLCD network calls
-      // elsewhere in this file.
+      // Waits for the map to have everything it needs loaded, capped at
+      // timeoutMs. Root-caused live (see the 15s timeout this replaces,
+      // and its own commit): a plain `map.once('idle', resolve)` hung
+      // forever whenever the camera jump right before it turned out to be
+      // a no-op — e.g. generateSpotPreview jumping to a pin the map was
+      // already sitting on/near, which is exactly the common case (you
+      // just dropped the pin, or the AI just flew you there). If nothing
+      // changed, MapLibre has nothing new to become idle *from*, so
+      // 'idle' never re-fires and a listener registered after the fact
+      // waits for an event that isn't coming.
+      //
+      // map.loaded() covers the case where the map is already fully
+      // settled the moment this is called (resolves immediately, no
+      // waiting at all). The poll interval covers the messier middle
+      // case — camera genuinely moved but 'idle' still doesn't fire for
+      // some reason this environment couldn't diagnose further (no live
+      // browser to attach devtools to) — by checking loaded() directly
+      // every 300ms instead of trusting the event alone. 'idle' itself
+      // stays wired as the fast path when it does fire normally.
       function waitForIdle(timeoutMs) {
         return new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Map did not finish loading in time')), timeoutMs);
-          map.once('idle', () => { clearTimeout(timeout); resolve(); });
+          if (map.loaded()) { resolve(); return; }
+          const finish = () => {
+            clearTimeout(timeout);
+            clearInterval(poll);
+            map.off('idle', onIdle);
+            resolve();
+          };
+          const onIdle = () => finish();
+          map.once('idle', onIdle);
+          const poll = setInterval(() => { if (map.loaded()) finish(); }, 300);
+          const timeout = setTimeout(() => {
+            clearInterval(poll);
+            map.off('idle', onIdle);
+            reject(new Error('Map did not finish loading in time'));
+          }, timeoutMs);
         });
       }
 
